@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera test</title>
+  <style>
+    body { font-family: sans-serif; background: #f3ece0; color: #2b2622; padding: 2rem; }
+    button { font: inherit; padding: .6rem 1.2rem; background: #c4623a; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    video { display: block; margin-top: 1rem; max-width: 100%; transform: scaleX(-1); /* mirror, like a selfie */ }
+    #status { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Camera test</h1>
+  <button id="start">Turn on camera</button>
+  <p id="status">Camera is off.</p>
+  <video id="video" autoplay playsinline muted></video>
+ 
+  <script>
+    const button = document.getElementById('start');
+    const status = document.getElementById('status');
+    const video = document.getElementById('video');
+ 
+    button.addEventListener('click', async () => {
+      // The camera only works on https:// or on localhost
+      if (!window.isSecureContext) {
+        status.textContent = 'This page is not on https, so the browser blocks the camera.';
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        status.textContent = 'This browser does not support camera access.';
+        return;
+      }
+ 
+      status.textContent = 'Asking for permission…';
+ 
+      try {
+        // This line makes the browser show the "allow camera?" popup
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: false
+        });
+ 
+        video.srcObject = stream;
+        await video.play();
+ 
+        // Important for ml5 later: give the video real width/height attributes
+        video.width = video.videoWidth;
+        video.height = video.videoHeight;
+ 
+        status.textContent = `Camera is on (${video.videoWidth}×${video.videoHeight}).`;
+        button.disabled = true;
+      } catch (err) {
+        // Explain each error in plain words
+        if (err.name === 'NotAllowedError') {
+          status.textContent = 'You blocked the camera. Allow it via the camera icon in the address bar.';
+        } else if (err.name === 'NotFoundError') {
+          status.textContent = 'No camera was found.';
+        } else if (err.name === 'NotReadableError') {
+          status.textContent = 'The camera is busy in another app (Zoom, Teams…).';
+        } else {
+          status.textContent = 'Something went wrong: ' + err.name;
+        }
+      }
+    });
+  </script>
+</body>
+</html>
