@@ -10,7 +10,7 @@
     section { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0 8vw; }
     h2 { font-weight: normal; margin: 0 0 .3rem; }
     p.note { margin: 0 0 1.5rem; opacity: .6; font-size: .95rem; }
-    .frame { position: relative; width: min(80vw, 900px); aspect-ratio: 14 / 9; overflow: hidden; }
+    .frame { position: relative; width: min(80vw, calc(72vh * 736 / 981)); aspect-ratio: 736 / 981; overflow: hidden; } /* portrait photo */
     .frame img, .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
     .sketch { filter: grayscale(1) contrast(1.3) brightness(1.1); }
   </style>
@@ -23,24 +23,24 @@
     <h2>A · Painted in with brush strokes</h2>
     <p class="note">The section stays pinned while one big brush stroke paints the colour from top to bottom.</p>
     <div class="frame">
-      <svg viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid slice">
+      <svg viewBox="0 0 736 981" preserveAspectRatio="xMidYMid slice">
         <defs>
           <!-- Makes the brush edges rough instead of perfectly smooth -->
           <!-- userSpaceOnUse: the filter area is set in pixels, so it covers the whole giant stroke -->
-          <filter id="rough" filterUnits="userSpaceOnUse" x="-400" y="-1200" width="2200" height="3400">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="4"/>
-            <feDisplacementMap in="SourceGraphic" scale="140"/>
+          <filter id="rough" filterUnits="userSpaceOnUse" x="-300" y="-700" width="1340" height="2000">
+            <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="4" seed="4"/>
+            <feDisplacementMap in="SourceGraphic" scale="90"/>
           </filter>
-          <!-- White = visible. One giant brush, wider than the image (1400), sweeping from top to bottom. -->
+          <!-- White = visible. One giant brush, wider than the image (736), sweeping from top to bottom. -->
           <mask id="paint">
-            <g filter="url(#rough)" fill="none" stroke="white" stroke-width="1800" stroke-linecap="round">
+            <g filter="url(#rough)" fill="none" stroke="white" stroke-width="960" stroke-linecap="round">
               <!-- Starts above the image so the round brush tip is hidden at the start -->
-              <path class="stroke" d="M700,-950 C640,-100 780,450 700,1000"/>
+              <path class="stroke" d="M368,-530 C335,-50 410,500 368,1050"/>
             </g>
           </mask>
         </defs>
-        <image class="sketch" href="https://picsum.photos/id/292/1400/900" width="1400" height="900" preserveAspectRatio="xMidYMid slice"/>
-        <image href="https://picsum.photos/id/292/1400/900" width="1400" height="900" preserveAspectRatio="xMidYMid slice" mask="url(#paint)"/>
+        <image class="sketch" href="cooking-table.jpeg" width="736" height="981" preserveAspectRatio="xMidYMid slice"/>
+        <image href="cooking-table.jpeg" width="736" height="981" preserveAspectRatio="xMidYMid slice" mask="url(#paint)"/>
       </svg>
     </div>
   </section>
@@ -52,8 +52,8 @@
     <h2>B · Colour spreading from one point</h2>
     <p class="note">This one plays as a real animation once it's in view, and reverses when you scroll back up.</p>
     <div class="frame">
-      <img class="sketch" src="https://picsum.photos/id/292/1400/900" alt="">
-      <img class="circle-colour" src="https://picsum.photos/id/292/1400/900" alt="Test photo">
+      <img class="sketch" src="cooking-table.jpeg" alt="">
+      <img class="circle-colour" src="cooking-table.jpeg" alt="A table full of ingredients while someone cuts tomatoes">
     </div>
   </section>
 
@@ -88,7 +88,7 @@
       }
     })
     .fromTo('.circle-colour',
-      { clipPath: 'circle(0% at 35% 60%)', scale: 1.15 },
+      { clipPath: 'circle(0% at 70% 56%)', scale: 1.15 },
       { clipPath: 'circle(80% at 50% 50%)', scale: 1, duration: 2.2, ease: 'power3.inOut' });
   </script>
 </body>
