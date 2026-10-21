@@ -147,12 +147,12 @@
 
       $('status').textContent = 'Loading HandPose…';
       const t0 = performance.now();
-      handPose = ml5.handPose({
+      // Without p5.js, ml5 1.4 returns a promise here, so we wait for the model itself
+      handPose = await ml5.handPose({
         maxHands: 1,
         flipped: $('flipped').checked,
         modelType: $('modelType').value
       });
-      await handPose.ready;
       const loadMs = Math.round(performance.now() - t0);
 
       const actual = getBackend();
@@ -333,7 +333,7 @@
           NotFoundError: 'No camera was found.',
           NotReadableError: 'The camera is busy in another app (Zoom, Teams…).'
         }[err.message === 'insecure' ? 'insecure' : err.name];
-        $('status').textContent = msg || 'Something went wrong: ' + (err.name || err.message);
+        $('status').textContent = msg || `Something went wrong: ${err.name}: ${err.message}`;
         console.error(err);
       }
     });

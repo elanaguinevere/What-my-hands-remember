@@ -273,8 +273,8 @@
       overlay.height = video.videoHeight;
 
       $('status').textContent = 'Loading HandPose…';
-      handPose = ml5.handPose({ maxHands: 1, flipped: true, modelType: 'full' });
-      await handPose.ready;
+      // Without p5.js, ml5 1.4 returns a promise here, so we wait for the model itself
+      handPose = await ml5.handPose({ maxHands: 1, flipped: true, modelType: 'full' });
       handPose.detectStart(video, results => {
         hands = results;
         const now = performance.now();
@@ -322,6 +322,7 @@
     $('reset').addEventListener('click', () => {
       slicesCut = 0; ignored = 0; falseChops = 0; missedChops = 0;
       chopTimes = []; tooFast = false;
+      $('status').textContent = handPose ? 'New onion. Chop away.' : 'New onion. Click the board to chop with the mouse.';
       $('sSlices').textContent = `0 / ${SLICES}`; $('sIgnored').textContent = '0';
       buildOnion();
     });
@@ -347,7 +348,7 @@
           NotFoundError: 'No camera was found.',
           NotReadableError: 'The camera is busy in another app (Zoom, Teams…).'
         }[err.message === 'insecure' ? 'insecure' : err.name];
-        $('status').textContent = msg || 'Something went wrong: ' + (err.name || err.message);
+        $('status').textContent = msg || `Something went wrong: ${err.name}: ${err.message}`;
         console.error(err);
       }
     });
