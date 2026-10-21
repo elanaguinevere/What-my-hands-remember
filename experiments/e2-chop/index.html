@@ -70,16 +70,16 @@
         <dt>slices</dt><dd id="sSlices">0 / 8</dd>
         <dt>chop state</dt><dd id="sState">–</dd>
         <dt>speed now</dt><dd id="sSpeed">–</dd>
-        <dt>chops / second</dt><dd id="sRate">–</dd>
+        <dt>per second</dt><dd id="sRate">–</dd>
         <dt>ignored (too fast)</dt><dd id="sIgnored">0</dd>
         <dt>detection fps</dt><dd id="sFps">–</dd>
       </dl>
 
       <div class="settings">
-        <label>chop down when faster than <input type="range" id="tDown" min="1" max="12" step="0.5" value="5"> <span id="vDown">5</span></label>
-        <label>count it when back up faster than <input type="range" id="tUp" min="0.5" max="8" step="0.5" value="2.5"> <span id="vUp">2.5</span></label>
-        <label>min. drop (palms) <input type="range" id="tDrop" min="0.1" max="2" step="0.1" value="0.5"> <span id="vDrop">0.5</span></label>
-        <label>too fast above (chops/s) <input type="range" id="tFast" min="1" max="6" step="0.5" value="3"> <span id="vFast">3</span></label>
+        <label>chop down when faster than <input type="range" id="tDown" min="1" max="12" step="0.5" value="2.5"> <span id="vDown">2.5</span></label>
+        <label>count it when back up faster than <input type="range" id="tUp" min="0.5" max="8" step="0.5" value="0.5"> <span id="vUp">0.5</span></label>
+        <label>min. drop (palms) <input type="range" id="tDrop" min="0.1" max="4" step="0.1" value="2"> <span id="vDrop">2</span></label>
+        <label>too fast above (chops/s) <input type="range" id="tFast" min="1" max="6" step="0.5" value="3.5"> <span id="vFast">3.5</span></label>
         <label>smoothing <input type="range" id="tSmooth" min="0" max="0.9" step="0.05" value="0.5"> <span id="vSmooth">0.5</span></label>
         <small>Speeds are in palms per second (wrist to the base of the middle finger), so they stay the same whether your hand is close to or far from the camera.</small>
       </div>
@@ -89,8 +89,17 @@
         <button class="secondary" id="falseChop" title="Press when a slice fell but you didn't chop">+ false chop</button>
         <button class="secondary" id="missedChop" title="Press when you chopped but no slice fell">+ missed chop</button>
       </div>
+      <label style="display:flex; gap:.5rem; align-items:center">Which test is this round?
+        <select id="roundType">
+          <option value="normal">1 · normal chopping, 8 chops</option>
+          <option value="still">2 · hand still for 10 s</option>
+          <option value="slow">3 · hand moving slowly up and down</option>
+          <option value="fast">4 · chopping as fast as I can</option>
+          <option value="tuning">tuning (changing sliders)</option>
+        </select>
+      </label>
       <div class="row">
-        <button class="secondary" id="logRound">Log this onion</button>
+        <button class="secondary" id="logRound">Log this round + new onion</button>
         <button class="secondary" id="copy">Copy log</button>
       </div>
       <pre id="log">Test plan: chop 8 times at a normal speed → New onion → hold your hand still for 10 s → move it slowly up and down → chop as fast as you can. Log each round.</pre>
@@ -143,6 +152,7 @@
     }
 
     let slicesCut = 0;
+    let roundStart = performance.now();
     function cutSlice() {
       if (slicesCut >= SLICES) return;
       const el = sliceEls[slicesCut];
@@ -157,10 +167,15 @@
     // State machine: ready → (fast down) → down → (fast up) → count a chop → ready
     let state = 'ready';
     let smoothY = null, lastY = null, lastT = null, speed = 0;
-    let topY = null;             // highest point before going down (to measure the drop)
+    let topY = null;
+    let bottomY = null;          // lowest point reached during the chop             // highest point before going down (to measure the drop)
     let chopTimes = [];          // timestamps of every chop attempt (for the chops/second rate)
     let ignored = 0, falseChops = 0, missedChops = 0;
     let tooFast = false;
+    // "Too fast" is measured separately from chops: every fast downward stroke counts,
+    // even a small one that doesn't drop far enough to cut a slice.
+    let strokeTimes = [];
+    let strokeDir = null;
     const history = [];          // {t, speed, mark} for the graph
 
     function onHand(hand, now) {
@@ -177,13 +192,32 @@
       lastY = smoothY; lastT = now;
 
       let mark = null;
+
+      // Count strokes: a new stroke starts each time the hand turns from fast up to fast down
+      if (speed > settings.Down && strokeDir !== 'down') {
+        strokeDir = 'down';
+        strokeTimes.push(now);
+        strokeTimes = strokeTimes.filter(t => now - t < 1000);
+        if (strokeTimes.length > settings.Fast) {
+          if (!tooFast) mark = 'ignored';
+          tooFast = true;
+          ignored += 1;
+          $('sIgnored').textContent = ignored;
+        }
+      } else if (speed < -settings.Down) {
+        strokeDir = 'up';
+      }
+      // While "too fast" is on, nothing gets cut: mom's hand is on yours
+      if (tooFast) { state = 'ready'; topY = smoothY; history.push({ t: now, speed, mark }); return; }
+
       if (state === 'ready') {
         if (topY === null || smoothY < topY) topY = smoothY;   // remember the highest point
-        if (speed > settings.Down) state = 'down';
+        if (speed > settings.Down) { state = 'down'; bottomY = smoothY; }
       } else if (state === 'down') {
+        bottomY = Math.max(bottomY, smoothY);   // remember the lowest point of this chop
         if (speed < -settings.Up) {
           // How far the hand dropped; registerChop ignores drops that are too small
-          const drop = smoothY - topY;
+          const drop = bottomY - topY;
           mark = registerChop(now, drop);
           state = 'ready';
           topY = smoothY;
@@ -216,9 +250,12 @@
     // "Too fast" stays on until the rate drops back down
     function updateTooFast(now) {
       chopTimes = chopTimes.filter(t => now - t < 1000);
-      if (tooFast && chopTimes.length <= settings.Fast - 1) tooFast = false;
+      strokeTimes = strokeTimes.filter(t => now - t < 1000);
+      const rate = Math.max(chopTimes.length, strokeTimes.length);
+      // "Too fast" switches off once you've slowed down to clearly below the limit
+      if (tooFast && rate <= settings.Fast - 1) tooFast = false;
       $('tooFast').classList.toggle('show', tooFast);
-      $('sRate').textContent = chopTimes.length;
+      $('sRate').textContent = `${strokeTimes.length} strokes · ${chopTimes.length} chops`;
     }
 
     // ---------- Graph ----------
@@ -310,18 +347,38 @@
       el.scrollTop = el.scrollHeight;
     }
 
+    // What counts as a pass depends on the test
+    const ROUNDS = {
+      normal: { label: 'normal chopping', pass: () => slicesCut === SLICES && ignored === 0 && falseChops === 0 && missedChops === 0, rule: '8/8 slices, 0 ignored, 0 false, 0 missed' },
+      still:  { label: 'hand still',      pass: () => slicesCut === 0, rule: '0 slices' },
+      slow:   { label: 'slow up and down', pass: () => slicesCut === 0, rule: '0 slices' },
+      fast:   { label: 'as fast as I can', pass: () => ignored > 0, rule: '"too fast" ignores chops' },
+      tuning: { label: 'tuning', pass: null, rule: '' }
+    };
+
     $('logRound').addEventListener('click', () => {
+      // Rounds shorter than 3 s are almost always a double click, not a real test
+      if (performance.now() - roundStart < 3000) {
+        $('status').textContent = 'That round was shorter than 3 seconds, so it was not logged.';
+        return;
+      }
+      const round = ROUNDS[$('roundType').value];
+      const seconds = ((performance.now() - roundStart) / 1000).toFixed(0);
+      const verdict = round.pass ? (round.pass() ? 'PASS' : 'FAIL') + ` (expected ${round.rule})` : 'no verdict (tuning)';
       log([
-        `onion · ${new Date().toLocaleTimeString()}`,
+        `${round.label} · ${new Date().toLocaleTimeString()} · ${seconds} s`,
         `  ${slicesCut}/${SLICES} slices · ${ignored} ignored as too fast · ${falseChops} false · ${missedChops} missed`,
         `  thresholds: down ${settings.Down} · up ${settings.Up} · drop ${settings.Drop} · too fast > ${settings.Fast}/s · smoothing ${settings.Smooth}`,
-        `  detection ${$('sFps').textContent} fps`
+        `  detection ${$('sFps').textContent} fps`,
+        `  ${verdict}`
       ].join('\n'));
+      $('reset').click(); // start a fresh onion, so the same round can't be logged twice
     });
 
     $('reset').addEventListener('click', () => {
       slicesCut = 0; ignored = 0; falseChops = 0; missedChops = 0;
-      chopTimes = []; tooFast = false;
+      chopTimes = []; strokeTimes = []; strokeDir = null; tooFast = false;
+      roundStart = performance.now();
       $('status').textContent = handPose ? 'New onion. Chop away.' : 'New onion. Click the board to chop with the mouse.';
       $('sSlices').textContent = `0 / ${SLICES}`; $('sIgnored').textContent = '0';
       buildOnion();
