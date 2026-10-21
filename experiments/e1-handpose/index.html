@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E1 · HandPose basics</title>
+  <style>
+    :root { --paper: #f3ece0; --ink: #2b2622; --accent: #c4623a; --good: #3f7d4e; --bad: #b8402a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: sans-serif; background: var(--paper); color: var(--ink); padding: 2rem; }
+    h1 { margin: 0 0 .2rem; font-weight: normal; }
+    .question { margin: 0 0 1.5rem; opacity: .75; max-width: 60ch; }
+    .layout { display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-start; }
+
+    /* The video is mirrored with CSS, like a selfie.
+       The keypoints come back already mirrored from ml5 (flipped: true),
+       so the canvas on top is NOT mirrored. */
+    .stage { position: relative; width: 640px; max-width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 6px; overflow: hidden; }
+    .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .stage video { transform: scaleX(-1); }
+    .stage.not-flipped video { transform: none; }
+    .stage.dim video { filter: brightness(var(--dim, .35)); }
+
+    .panel { flex: 1 1 300px; max-width: 420px; display: flex; flex-direction: column; gap: 1rem; }
+    button { font: inherit; padding: .6rem 1.2rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+    button:disabled { opacity: .45; cursor: default; }
+    label { display: flex; gap: .5rem; align-items: center; }
+    .settings { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; border: 1px solid rgba(43,38,34,.25); border-radius: 6px; }
+    .stats { display: grid; grid-template-columns: auto 1fr; gap: .3rem 1rem; font-family: monospace; font-size: .95rem; }
+    .stats dt { opacity: .65; }
+    .stats dd { margin: 0; }
+    .pass { color: var(--good); font-weight: bold; }
+    .fail { color: var(--bad); font-weight: bold; }
+    #status { margin: 0; }
+    #log { font-family: monospace; font-size: .8rem; white-space: pre-wrap; background: rgba(43,38,34,.06); padding: .8rem; border-radius: 6px; max-height: 220px; overflow: auto; margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>E1 · HandPose basics</h1>
+  <p class="question">
+    <strong>Question:</strong> can ml5 HandPose track one hand fast and steadily enough in the browser to drive the cooking steps?<br>
+    <strong>Pass:</strong> stable tracking at about 20 fps or more.
+  </p>
+
+  <div class="layout">
+    <div class="stage" id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay" width="640" height="480"></canvas>
+    </div>
+
+    <div class="panel">
+      <button id="start">Turn on camera and load HandPose</button>
+      <p id="status">Camera is off.</p>
+
+      <div class="settings">
+        <label>Backend
+          <select id="backend">
+            <option value="auto">automatic (what visitors get)</option>
+            <option value="webgpu">force webgpu</option>
+            <option value="webgl">force webgl</option>
+            <option value="cpu">force cpu</option>
+          </select>
+        </label>
+        <label>Model
+          <select id="modelType">
+            <option value="full">full (more accurate)</option>
+            <option value="lite">lite (faster)</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="flipped" checked> flipped: true (mirror, like a selfie)</label>
+        <label><input type="checkbox" id="dim"> simulate dim light</label>
+        <label>darkness <input type="range" id="dimAmount" min="0.1" max="0.9" step="0.05" value="0.35"> <span id="dimValue">0.35</span></label>
+        <small>Changing backend, model or flipped reloads the model. "Dim light" darkens the image the model sees, so you can compare it with the same room.</small>
+      </div>
+
+      <dl class="stats">
+        <dt>backend</dt><dd id="sBackend">–</dd>
+        <dt>model load</dt><dd id="sLoad">–</dd>
+        <dt>video size</dt><dd id="sSize">–</dd>
+        <dt>detection fps</dt><dd id="sFps">–</dd>
+        <dt>time per result</dt><dd id="sInterval">–</dd>
+        <dt>hand found</dt><dd id="sFound">–</dd>
+        <dt>jitter (wrist)</dt><dd id="sJitter">–</dd>
+        <dt>verdict</dt><dd id="sVerdict">–</dd>
+      </dl>
+
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap">
+        <button class="secondary" id="snapshot" disabled>Log a 10-second measurement</button>
+        <button class="secondary" id="copy">Copy log</button>
+      </div>
+      <pre id="log">Measurements appear here. Copy them into your research log.</pre>
+    </div>
+  </div>
+
+  <script src="../../js/lib/ml5.min.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const video = $('video');
+    const canvas = $('overlay');
+    const ctx = canvas.getContext('2d');
+    const stage = $('stage');
+
+    // Which keypoints connect to each other (the 21 HandPose points)
+    const BONES = [
+      [0, 1], [1, 2], [2, 3], [3, 4],          // thumb
+      [0, 5], [5, 6], [6, 7], [7, 8],          // index
+      [5, 9], [9, 10], [10, 11], [11, 12],     // middle
+      [9, 13], [13, 14], [14, 15], [15, 16],   // ring
+      [13, 17], [0, 17], [17, 18], [18, 19], [19, 20] // pinky + palm edge
+    ];
+
+    let handPose = null;
+    let hands = [];
+    let running = false;
+
+    // Measurement data
+    let resultTimes = [];      // timestamps of each detection result (last 2 s)
+    let foundFlags = [];       // true/false per result (last 2 s)
+    let wristHistory = [];     // wrist positions while the hand is still (for jitter)
+    let measuring = null;      // collects data during a 10 s measurement
+
+    // ---------- 1. Camera ----------
+    async function startCamera() {
+      if (!window.isSecureContext) throw new Error('insecure');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      // Important: without real width/height attributes, the model sees a 0×0 image and finds nothing
+      video.width = video.videoWidth;
+      video.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      $('sSize').textContent = `${video.videoWidth}×${video.videoHeight}`;
+    }
+
+    // ---------- 2. Model ----------
+    async function loadModel() {
+      if (handPose) { handPose.detectStop(); handPose = null; }
+      hands = [];
+      resultTimes = []; foundFlags = []; wristHistory = [];
+
+      const backend = $('backend').value;
+      if (backend !== 'auto' && typeof ml5.setBackend === 'function') {
+        try { await ml5.setBackend(backend); } catch (e) { log(`could not force ${backend}: ${e.message}`); }
+      }
+
+      $('status').textContent = 'Loading HandPose…';
+      const t0 = performance.now();
+      handPose = ml5.handPose({
+        maxHands: 1,
+        flipped: $('flipped').checked,
+        modelType: $('modelType').value
+      });
+      await handPose.ready;
+      const loadMs = Math.round(performance.now() - t0);
+
+      const actual = getBackend();
+      $('sBackend').textContent = actual;
+      $('sLoad').textContent = `${(loadMs / 1000).toFixed(1)} s`;
+      stage.classList.toggle('not-flipped', !$('flipped').checked);
+      log(`model loaded · backend ${actual} · model ${$('modelType').value} · flipped ${$('flipped').checked} · ${loadMs} ms`);
+
+      handPose.detectStart(video, gotHands);
+      $('status').textContent = 'Show one hand to the camera.';
+      $('snapshot').disabled = false;
+    }
+
+    function getBackend() {
+      try { return (ml5.tf && ml5.tf.getBackend()) || 'unknown'; } catch (e) { return 'unknown'; }
+    }
+
+    // Called by ml5 every time it has a new result
+    function gotHands(results) {
+      hands = results;
+      const now = performance.now();
+      resultTimes.push(now);
+      foundFlags.push(results.length > 0);
+      while (resultTimes.length && now - resultTimes[0] > 2000) { resultTimes.shift(); foundFlags.shift(); }
+
+      if (results.length) {
+        const w = results[0].keypoints[0];
+        wristHistory.push({ x: w.x, y: w.y, t: now });
+        while (wristHistory.length && now - wristHistory[0].t > 1000) wristHistory.shift();
+      }
+
+      if (measuring) {
+        measuring.times.push(now);
+        measuring.found += results.length ? 1 : 0;
+        measuring.total += 1;
+      }
+    }
+
+    // ---------- 3. Drawing + stats, every animation frame ----------
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (hands.length) {
+        const kp = hands[0].keypoints;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255,255,255,.8)';
+        for (const [a, b] of BONES) {
+          ctx.beginPath();
+          ctx.moveTo(kp[a].x, kp[a].y);
+          ctx.lineTo(kp[b].x, kp[b].y);
+          ctx.stroke();
+        }
+        kp.forEach((p, i) => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, i === 0 ? 7 : 5, 0, Math.PI * 2);
+          ctx.fillStyle = i === 0 ? '#c4623a' : '#0088FF';
+          ctx.fill();
+        });
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(`${hands[0].handedness} · ${(hands[0].confidence * 100).toFixed(0)}%`, 12, 24);
+      }
+
+      updateStats();
+      requestAnimationFrame(draw);
+    }
+
+    function updateStats() {
+      if (!handPose) return;
+      const n = resultTimes.length;
+      const span = n > 1 ? (resultTimes[n - 1] - resultTimes[0]) / 1000 : 0;
+      const fps = span > 0 ? (n - 1) / span : 0;
+      const interval = fps > 0 ? 1000 / fps : 0;
+      const found = n ? foundFlags.filter(Boolean).length / n : 0;
+
+      $('sFps').textContent = fps ? fps.toFixed(1) : '–';
+      $('sInterval').textContent = interval ? `${interval.toFixed(0)} ms` : '–';
+      $('sFound').textContent = n ? `${Math.round(found * 100)}% of results` : '–';
+      $('sJitter').textContent = jitter();
+
+      const v = $('sVerdict');
+      if (!fps) { v.textContent = '–'; v.className = ''; }
+      else if (fps >= 20) { v.textContent = 'PASS (≥ 20 fps)'; v.className = 'pass'; }
+      else { v.textContent = 'FAIL (< 20 fps)'; v.className = 'fail'; }
+    }
+
+    // Jitter: how much the wrist moves while you hold your hand still (std. dev. in px over the last second)
+    function jitter() {
+      if (wristHistory.length < 5) return '–';
+      const mx = wristHistory.reduce((s, p) => s + p.x, 0) / wristHistory.length;
+      const my = wristHistory.reduce((s, p) => s + p.y, 0) / wristHistory.length;
+      const sd = Math.sqrt(wristHistory.reduce((s, p) => s + (p.x - mx) ** 2 + (p.y - my) ** 2, 0) / wristHistory.length);
+      return `${sd.toFixed(1)} px (hold still to read it)`;
+    }
+
+    // ---------- 4. 10-second measurement for the log ----------
+    function measure() {
+      $('snapshot').disabled = true;
+      measuring = { times: [], found: 0, total: 0 };
+      let left = 10;
+      $('status').textContent = `Measuring… ${left}`;
+      const timer = setInterval(() => {
+        left -= 1;
+        $('status').textContent = `Measuring… ${left}`;
+        if (left > 0) return;
+        clearInterval(timer);
+        const m = measuring; measuring = null;
+        const t = m.times;
+        const fps = t.length > 1 ? (t.length - 1) / ((t[t.length - 1] - t[0]) / 1000) : 0;
+        const gaps = t.slice(1).map((x, i) => x - t[i]);
+        const worst = gaps.length ? Math.max(...gaps) : 0;
+        log([
+          `measurement · ${new Date().toLocaleTimeString()}`,
+          `  backend ${getBackend()} · model ${$('modelType').value} · flipped ${$('flipped').checked}` +
+            ($('dim').checked ? ` · dim ${$('dimAmount').value}` : ''),
+          `  ${fps.toFixed(1)} fps · avg ${fps ? (1000 / fps).toFixed(0) : '–'} ms per result · worst gap ${worst.toFixed(0)} ms`,
+          `  hand found in ${m.total ? Math.round(m.found / m.total * 100) : 0}% of results · jitter ${jitter()}`,
+          `  ${fps >= 20 ? 'PASS' : 'FAIL'}`
+        ].join('\n'));
+        $('status').textContent = 'Done. Try again with other settings.';
+        $('snapshot').disabled = false;
+      }, 1000);
+    }
+
+    // ---------- 5. Dim light ----------
+    // The model must see the darker image too, so in dim mode we feed it a canvas
+    // with a brightness filter instead of the raw video.
+    const dimCanvas = document.createElement('canvas');
+    const dimCtx = dimCanvas.getContext('2d');
+    let dimLoop = null;
+
+    function applyDim() {
+      const on = $('dim').checked;
+      const amount = $('dimAmount').value;
+      $('dimValue').textContent = amount;
+      stage.style.setProperty('--dim', amount);
+      stage.classList.toggle('dim', on);
+      if (!handPose) return;
+
+      handPose.detectStop();
+      cancelAnimationFrame(dimLoop);
+      if (on) {
+        dimCanvas.width = video.videoWidth;
+        dimCanvas.height = video.videoHeight;
+        const paint = () => {
+          dimCtx.filter = `brightness(${$('dimAmount').value})`;
+          dimCtx.drawImage(video, 0, 0);
+          dimLoop = requestAnimationFrame(paint);
+        };
+        paint();
+        handPose.detectStart(dimCanvas, gotHands);
+      } else {
+        handPose.detectStart(video, gotHands);
+      }
+    }
+
+    // ---------- helpers + events ----------
+    function log(line) {
+      const el = $('log');
+      if (el.dataset.started !== '1') { el.textContent = ''; el.dataset.started = '1'; }
+      el.textContent += line + '\n';
+      el.scrollTop = el.scrollHeight;
+    }
+
+    $('start').addEventListener('click', async () => {
+      $('start').disabled = true;
+      try {
+        $('status').textContent = 'Asking for camera permission…';
+        await startCamera();
+        await loadModel();
+        running = true;
+        draw();
+      } catch (err) {
+        $('start').disabled = false;
+        const msg = {
+          insecure: 'This page is not on https or localhost, so the browser blocks the camera.',
+          NotAllowedError: 'You blocked the camera. Allow it via the camera icon in the address bar.',
+          NotFoundError: 'No camera was found.',
+          NotReadableError: 'The camera is busy in another app (Zoom, Teams…).'
+        }[err.message === 'insecure' ? 'insecure' : err.name];
+        $('status').textContent = msg || 'Something went wrong: ' + (err.name || err.message);
+        console.error(err);
+      }
+    });
+
+    for (const id of ['backend', 'modelType', 'flipped']) {
+      $(id).addEventListener('change', async () => {
+        if (!running) return;
+        $('dim').checked = false; applyDim();
+        await loadModel();
+      });
+    }
+    $('dim').addEventListener('change', applyDim);
+    // The slider only changes the darkness; the paint loop reads it live, so no restart needed
+    $('dimAmount').addEventListener('input', () => {
+      $('dimValue').textContent = $('dimAmount').value;
+      stage.style.setProperty('--dim', $('dimAmount').value);
+    });
+    $('snapshot').addEventListener('click', measure);
+    $('copy').addEventListener('click', () => navigator.clipboard.writeText($('log').textContent));
+  </script>
+</body>
+</html>
