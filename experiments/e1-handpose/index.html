@@ -140,9 +140,17 @@
       hands = [];
       resultTimes = []; foundFlags = []; wristHistory = [];
 
+      // Switch the TensorFlow backend and WAIT until it's really switched.
+      // tf.setBackend returns false if this browser can't run that backend.
       const backend = $('backend').value;
-      if (backend !== 'auto' && typeof ml5.setBackend === 'function') {
-        try { await ml5.setBackend(backend); } catch (e) { log(`could not force ${backend}: ${e.message}`); }
+      if (backend !== 'auto') {
+        const before = getBackend();
+        let ok = false;
+        try {
+          ok = await ml5.tf.setBackend(backend);
+          await ml5.tf.ready();
+        } catch (e) { log(`could not force ${backend}: ${e.message}`); }
+        log(`force ${backend}: ${ok ? 'ok' : 'FAILED'} (was ${before}, now ${getBackend()})`);
       }
 
       $('status').textContent = 'Loading HandPose…';
