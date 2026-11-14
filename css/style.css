@@ -1,0 +1,111 @@
+/* What my hands remember — paper palette, Fraunces + DM Mono */
+:root {
+  --paper: #f3ece0; --ink: #2b2622; --accent: #c4623a; --night: #1d1a24;
+  --good: #3f7d4e; --bad: #b8402a; --warn: #c9962a;
+  --serif: 'Fraunces', Georgia, serif; --mono: 'DM Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--serif); font-weight: 300; overflow: hidden; }
+body.scrolling { overflow: auto; height: auto; }
+button { font: 500 .95rem var(--mono); padding: .7rem 1.3rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+button.secondary { background: transparent; color: inherit; border: 1px solid currentColor; }
+button.link { background: none; color: inherit; padding: .3rem; text-decoration: underline; opacity: .6; }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; justify-content: center; }
+
+/* ---------- Steps: stacked full-screen layers, only .active is shown ---------- */
+.step { position: fixed; inset: 0; display: none; padding: 4.5rem 4vw 2rem; }
+.step.active { display: block; }
+.centre { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 1rem; max-width: 46rem; margin: 0 auto; }
+h1 { font-size: clamp(2.8rem, 6vw, 5.5rem); font-weight: 300; margin: 0; line-height: 1; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 300; margin: 0; }
+.sub { font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; font-size: .85rem; margin: 0; opacity: .7; }
+.lead { font-size: 1.2rem; line-height: 1.5; margin: 0; max-width: 36rem; }
+.message { font-family: var(--mono); font-size: .9rem; min-height: 1.4em; margin: 0; }
+.checks { list-style: none; padding: 0; margin: 0; font-family: var(--mono); font-size: .78rem; text-align: left; }
+.checks .warn { color: var(--warn); } .checks .fail { color: var(--bad); }
+.shapes b { display: block; font-size: 1.1rem; }
+
+/* The counter: her hands on the left, yours on the right */
+.counter { height: 100%; display: grid; grid-template-columns: 1fr 1.25fr; gap: 3vw; align-items: center; }
+.mom { margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+.mom-hands { aspect-ratio: 4 / 3; border-radius: 12px; background: #e6d8c0; display: grid; place-items: center; }
+.mom-hands::after { content: attr(data-placeholder); font-family: var(--mono); font-size: .8rem; opacity: .5; }   /* replaced by the filmed video of mom's hands */
+.say { font-size: 1.5rem; line-height: 1.35; min-height: 4em; }
+.you { display: flex; flex-direction: column; gap: .8rem; }
+.scene { width: 100%; height: auto; background: #e9dcc4; border: 2px solid var(--ink); border-radius: 12px; display: block; }
+.hint { font-family: var(--mono); font-size: .9rem; margin: 0; }
+.step-progress { height: 6px; background: rgba(43,38,34,.12); border-radius: 99px; overflow: hidden; }
+.step-progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.pinches { font-size: 1.4rem; margin: 0; }
+.too-fast-note { display: none; color: var(--bad); font-family: var(--mono); margin: 0; }
+.step.too-fast .too-fast-note { display: block; }
+.step.too-fast .scene { border-color: var(--bad); }
+
+/* Scene parts */
+.wood { fill: #c99f6c; stroke: var(--ink); stroke-width: 3; }
+.slice, .onion-root { fill: #f4ead6; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
+.seed { fill: #6b3f1f; stroke: var(--ink); stroke-width: 1; }
+
+/* Mouse-only controls */
+.mouse-only { display: none; }
+body[data-input="mouse"] .mouse-only, body[data-input="none"] .mouse-only { display: flex; }
+
+/* On your own: tall scroll section with a sticky stage */
+.step[data-step="alone"] { background: var(--night); color: var(--paper); padding: 0; }
+.step[data-step="alone"].active { position: relative; height: 400vh; }
+.sticky { position: sticky; top: 0; height: 100vh; display: grid; place-items: center; grid-template-rows: 1fr auto auto; padding: 4rem 6vw 2rem; gap: 1rem; }
+.kitchen { width: min(90vw, 900px); height: auto; border-radius: 12px; }
+.lines { text-align: center; font-size: 1.4rem; min-height: 6em; }
+.lines p { margin: .2rem 0; opacity: 0; }
+.finale-line { font-size: clamp(2rem, 4.5vw, 3.4rem); line-height: 1.2; margin: 0 0 2rem; }
+.step[data-step="finale"] { background: var(--night); color: var(--paper); }
+
+/* ---------- HUD ---------- */
+.hud { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; z-index: 20; font-family: var(--mono); font-size: .8rem; pointer-events: none; }
+.hud > * { pointer-events: auto; }
+.status { display: flex; align-items: center; gap: .5rem; }
+#status-light { width: .7rem; height: .7rem; border-radius: 50%; background: #9b948b; }
+#status-light[data-colour="yellow"] { background: var(--warn); animation: pulse 1s infinite; }
+#status-light[data-colour="green"] { background: var(--good); }
+#status-light[data-colour="red"] { background: var(--bad); }
+@keyframes pulse { 50% { opacity: .35; } }
+#progress { display: flex; gap: .5rem; }
+#progress[hidden] { display: none; }
+#progress button { width: .75rem; height: .75rem; padding: 0; border-radius: 50%; background: transparent; border: 2px solid currentColor; }
+#progress button.done { background: currentColor; }
+#progress button.current { background: var(--accent); border-color: var(--accent); }
+#skip { visibility: hidden; }
+body:is([data-flow="chop"], [data-flow="grind"], [data-flow="spices"], [data-flow="stir"], [data-flow="taste"], [data-flow="teach"]) #skip { visibility: visible; }
+body:is([data-flow="alone"], [data-flow="finale"]) .hud { color: var(--paper); }
+
+/* Camera preview */
+#pip { position: fixed; right: 1.2rem; bottom: 1.2rem; width: 180px; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: #000; z-index: 15; opacity: 0; transition: opacity .4s; }
+#pip video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+body[data-camera="on"] #pip { opacity: .9; }
+body:is([data-flow="alone"], [data-flow="finale"], [data-flow="intro"]) #pip { opacity: 0; }
+
+/* Notice + toast */
+#notice { position: fixed; inset: 0; background: rgba(29,26,36,.55); display: grid; place-items: center; z-index: 40; }
+#notice[hidden] { display: none; }
+#notice .card { background: var(--paper); padding: 2rem 2.4rem; border-radius: 12px; max-width: 28rem; text-align: center; }
+#toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translate(-50%, 150%); background: var(--ink); color: var(--paper); font-family: var(--mono); font-size: .85rem; padding: .7rem 1.2rem; border-radius: 99px; transition: transform .3s, opacity .3s; z-index: 30; opacity: 0; }
+#toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+/* Debug panel */
+#debug { position: fixed; left: 1rem; bottom: 1rem; width: 320px; max-height: 70vh; overflow: auto; background: rgba(255,255,255,.95); color: var(--ink); border: 1px solid var(--ink); border-radius: 8px; padding: .8rem; font: .72rem var(--mono); z-index: 50; }
+#debug button { font-size: .68rem; padding: .25rem .5rem; margin: .1rem; }
+#debug pre { white-space: pre-wrap; margin: .5rem 0 0; }
+
+/* Fallbacks */
+.static-story { display: none; max-width: 40rem; margin: 15vh auto; padding: 0 2rem; font-size: 1.3rem; line-height: 1.5; }
+body.static { overflow: auto; }
+body.static .static-story { display: block; }
+body.static #scenes, body.static .hud { display: none; }
+.file-warning { display: none; }
+.is-file .file-warning { display: block; position: fixed; inset: auto 1rem 1rem; z-index: 60; background: var(--bad); color: #fff; padding: 1rem; border-radius: 8px; font-family: var(--mono); }
+
+@media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; animation: none !important; } }
+.is-file .static-story { display: block; } .is-file #scenes { display: none; }

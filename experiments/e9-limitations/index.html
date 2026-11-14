@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E9 · Technical limitations: detect &amp; mitigate</title>
+  <link rel="stylesheet" href="../shared/exp.css">
+  <style>
+    #checks { width: 100%; }
+    #checks td { text-align: left; vertical-align: top; }
+    .ok { color: var(--good); } .warn { color: #b07a12; } .fail { color: var(--bad); }
+    .dot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: currentColor; margin-right: .4rem; }
+  </style>
+</head>
+<body>
+  <h1>E9 · Technical limitations</h1>
+  <p class="question">
+    <strong>Question:</strong> what can go wrong on a visitor's computer, can the page notice it by itself, and what does it do then?<br>
+    <strong>Pass:</strong> every row below is detected automatically and has a mitigation; with the camera blocked, unplugged or too slow, the visitor always ends up in a working mouse mode.
+  </p>
+
+  <div class="layout">
+    <div class="left">
+      <h2>Before loading (instant)</h2>
+      <table id="checks"><tbody></tbody></table>
+      <h2>While running</h2>
+      <table id="live" style="width:100%"><tbody></tbody></table>
+      <small>Model loading is timed: ml5 script (lazy-loaded, 4.5 MB) + HandPose weights. Detection pauses automatically when the tab is hidden.</small>
+    </div>
+
+    <div class="panel">
+      <button id="start">Run camera + HandPose checks</button>
+      <p class="status" id="status">Static checks run on load. Start the camera to run the live checks.</p>
+      <div class="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div>
+      <div class="settings">
+        <label class="row"><input type="checkbox" id="lite"> HandPose "lite" model (mitigation for slow GPUs)</label>
+        <label>simulate slow device: skip frames <input type="range" id="tSkip" min="0" max="10" step="1" value="0"> <span id="vSkip">0</span></label>
+      </div>
+      <div class="row">
+        <button class="secondary" id="unplug" disabled>Simulate unplugged camera</button>
+        <button class="secondary" id="snapshot">Log a snapshot</button>
+        <button class="secondary" id="copy">Copy log</button>
+      </div>
+      <pre class="log" id="log">Test plan: open via file:// · open on http over the network (not localhost) · block the camera · camera busy in Zoom/Photo Booth · unplug an external camera · dark room · window behind you · hand too close/far · tab in background · Chrome with hardware acceleration off. Log what this page says each time.</pre>
+    </div>
+  </div>
+
+  <script src="../../js/lib/gsap.min.js"></script>
+  <script src="../../js/lib/ScrollTrigger.min.js"></script>
+  <script src="../shared/exp.js"></script>
+  <script type="module">
+    import { staticChecks, measureLight, checkHandFraming, fpsVerdict, backendCheck, watchCamera, loadScript, withTimeout, explainError } from '../../js/core/system-check.js';
+    const { $ } = Exp;
+    const log = Exp.makeLog($('log'));
+    const fps = Exp.fpsMeter();
+    const settings = Exp.bindSliders(['Skip'], {});
+    const octx = $('overlay').getContext('2d');
+
+    const row = r => `<tr class="${r.status}"><td><span class="dot"></span>${r.label}</td><td>${r.detail}</td><td>${r.fix || ''}</td></tr>`;
+    let lastStatic = [];
+    staticChecks({ libs: { gsap: !!window.gsap, ScrollTrigger: !!window.ScrollTrigger, ml5: true } }).then(rows => {
+      rows = rows.filter(r => r.id !== 'lib-ml5');           // ml5 is checked when it is lazy-loaded
+      lastStatic = rows;
+      $('checks').tBodies[0].innerHTML = rows.map(row).join('');
+    });
+
+    const live = {};
+    function setLive(r) { live[r.id] = r; $('live').tBodies[0].innerHTML = Object.values(live).map(row).join(''); }
+
+    let handPose = null, hand = null, stream = null, frame = 0, paused = false;
+    async function start() {
+      setLive({ id: 'load', label: 'Loading', status: 'warn', detail: 'ml5 script…' });
+      const t0 = performance.now();
+      await loadScript('../../js/lib/ml5.min.js');
+      const t1 = performance.now();
+      if (!window.isSecureContext) { const e = new Error('insecure'); e.name = 'InsecureContext'; throw e; }
+      stream = await Exp.startCamera($('video'), $('overlay'));
+      const t2 = performance.now();
+      watchCamera(stream, reason => {
+        setLive({ id: 'camera', label: 'Camera', status: 'fail', detail: `lost (${reason})`, fix: 'Pause the story, show "camera lost" with Retry / Continue with mouse.' });
+        log.line(`camera lost: ${reason} @ ${new Date().toLocaleTimeString()}`);
+      });
+      setLive({ id: 'camera', label: 'Camera', status: 'ok', detail: `${$('video').videoWidth}×${$('video').videoHeight} · ${stream.getVideoTracks()[0].label}` });
+      handPose = await withTimeout(ml5.handPose({ maxHands: 1, flipped: true, modelType: $('lite').checked ? 'lite' : 'full' }), 45000, 'HandPose');
+      const t3 = performance.now();
+      setLive({ id: 'load', label: 'Loading', status: t3 - t0 > 15000 ? 'warn' : 'ok',
+        detail: `ml5 ${((t1 - t0) / 1000).toFixed(1)} s · camera ${((t2 - t1) / 1000).toFixed(1)} s · HandPose ${((t3 - t2) / 1000).toFixed(1)} s`,
+        fix: t3 - t0 > 15000 ? 'Start loading the model during the intro, before it is needed.' : '' });
+      setLive(backendCheck());
+      startDetection();
+      $('unplug').disabled = false;
+      $('status').textContent = 'Running. Try the situations in the test plan.';
+    }
+
+    function startDetection() {
+      handPose.detectStart($('video'), r => {
+        // "slow device": only every (skip + 1)th result counts
+        if (settings.Skip && (frame++ % (settings.Skip + 1))) return;
+        fps.tick(); hand = r[0] || null;
+      });
+    }
+    // Pause detection when the tab is hidden (saves battery, avoids a burst of stale results)
+    document.addEventListener('visibilitychange', () => {
+      if (!handPose) return;
+      if (document.hidden) { handPose.detectStop(); paused = true; log.line(`tab hidden → detection paused @ ${new Date().toLocaleTimeString()}`); }
+      else if (paused) { startDetection(); paused = false; log.line('tab visible → detection resumed'); }
+    });
+
+    // Live checks, 4× per second
+    setInterval(() => {
+      if (!handPose) return;
+      const light = measureLight($('video'));
+      if (light) setLive({ id: 'light', label: 'Light', ...light });
+      setLive(checkHandFraming(hand, $('video').videoWidth, $('video').videoHeight));
+      setLive(fpsVerdict(fps.value));
+    }, 250);
+
+    (function loop() {
+      octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
+      if (hand) Exp.drawHand(octx, hand.keypoints);
+      requestAnimationFrame(loop);
+    })();
+
+    $('start').addEventListener('click', async () => {
+      $('start').disabled = true;
+      try { await start(); }
+      catch (err) {
+        $('start').disabled = false;
+        setLive({ id: 'camera', label: 'Camera / model', status: 'fail', detail: `${err.name}: ${err.message}`, fix: explainError(err) });
+        log.line(`start failed: ${err.name} · ${err.message}`);
+        $('status').textContent = explainError(err);
+      }
+    });
+    $('unplug').addEventListener('click', () => stream?.getVideoTracks().forEach(t => { t.stop(); t.dispatchEvent(new Event('ended')); }));
+    $('snapshot').addEventListener('click', () => {
+      log.line(`snapshot @ ${new Date().toLocaleTimeString()} · ${navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/g)?.join(' ') || navigator.userAgent}`);
+      [...lastStatic, ...Object.values(live)].forEach(r => log.line(`  [${r.status}] ${r.label}: ${r.detail}${r.fix ? ' → ' + r.fix : ''}`));
+    });
+    $('copy').addEventListener('click', () => log.copy());
+  </script>
+</body>
+</html>

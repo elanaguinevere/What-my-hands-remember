@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E8 · Meaningful mapping: ML signals → animation</title>
+  <link rel="stylesheet" href="../shared/exp.css">
+  <style>
+    #map { width: 100%; }
+    #map td, #map th { text-align: left; }
+    #map input[type=number] { width: 4.2rem; font: inherit; }
+    #map select { font: inherit; }
+    #map .live { width: 90px; }
+  </style>
+</head>
+<body>
+  <h1>E8 · Meaningful mapping</h1>
+  <p class="question">
+    <strong>Question:</strong> which kinds of mapping make a hand signal feel like a <em>cooking action</em> instead of a remote control? Every row below is one signal → one animation parameter, with its own input range, curve and smoothing.<br>
+    <strong>Pass:</strong> 5 testers can say what each movement does without being told (E9 prototype test), and nothing jitters while the hand is still.
+  </p>
+
+  <div class="layout">
+    <div class="left">
+      <div class="scene" id="scene">
+        <svg viewBox="0 0 640 360" aria-hidden="true">
+          <g id="steam" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity="0">
+            <path d="M260,140 C240,110 280,90 260,60"/><path d="M320,130 C300,100 340,80 320,45"/><path d="M380,140 C360,110 400,90 380,60"/>
+          </g>
+          <path d="M130,190 L150,330 Q320,355 490,330 L510,190 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+          <ellipse id="curry" cx="320" cy="190" rx="190" ry="34" fill="#e6b85c" stroke="#2b2622" stroke-width="3"/>
+          <g id="particles"></g>
+          <g id="spoon"><rect x="-8" y="-150" width="16" height="150" rx="8" fill="#b88a5a" stroke="#2b2622" stroke-width="3"/><ellipse cx="0" cy="0" rx="18" ry="10" fill="#b88a5a" stroke="#2b2622" stroke-width="3"/></g>
+          <g id="lid"><ellipse cx="320" cy="186" rx="196" ry="30" fill="#5a524b" stroke="#2b2622" stroke-width="3"/><rect x="300" y="146" width="40" height="22" rx="8" fill="#2b2622"/></g>
+        </svg>
+        <div class="badge" id="badge"></div>
+      </div>
+
+      <table id="map">
+        <thead><tr><th>signal (from the model)</th><th>in min</th><th>in max</th><th>curve</th><th>smooth (s)</th><th>→ animation</th><th>type</th><th class="live">now</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <small>
+        <b>direct</b> = the thing follows your hand (feels like holding it) ·
+        <b>continuous</b> = a level that rises and falls with how you move ·
+        <b>accumulate</b> = adds up over time, never goes back (cooking is irreversible) ·
+        <b>event</b> = one gesture → one thing, then re-arm ·
+        <b>state</b> = on/off, with a delay so a lost frame doesn't flicker.
+      </small>
+    </div>
+
+    <div class="panel">
+      <button id="start">Turn on camera</button>
+      <p class="status" id="status">Camera is off. Mouse mode: move over the pot = hand, click = pinch, leave the pot = hand gone.</p>
+      <div class="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div>
+      <dl class="stats">
+        <dt>hand</dt><dd id="sHand">–</dd>
+        <dt>detection fps</dt><dd id="sFps">–</dd>
+        <dt>total stirred</dt><dd id="sTotal">0 palms</dd>
+      </dl>
+      <div class="row">
+        <button class="secondary" id="reset">Reset pot</button>
+        <button class="secondary" id="dump">Log mapping</button>
+        <button class="secondary" id="copy">Copy log</button>
+      </div>
+      <pre class="log" id="log">Try each row on its own: change one curve or smoothing value and feel the difference. Log the settings that felt right.</pre>
+    </div>
+  </div>
+
+  <script src="../../js/lib/gsap.min.js"></script>
+  <script src="../../js/lib/ml5.min.js"></script>
+  <script src="../shared/exp.js"></script>
+  <script>
+    const { $, clamp } = Exp;
+    const log = Exp.makeLog($('log'));
+    const fps = Exp.fpsMeter();
+    const octx = $('overlay').getContext('2d');
+
+    // ---------- The Mapper: normalise → curve → output range → smoothed setter ----------
+    // (the same idea goes into js/core/mapping.js in the app)
+    class Mapping {
+      constructor(o) {
+        Object.assign(this, { curve: 'none', smooth: 0.2, value: 0, raw: 0 }, o);
+        this.setter = this.smooth > 0 && this.target ? gsap.quickTo(this.target, this.prop, { duration: this.smooth, ease: 'power2.out' }) : null;
+      }
+      rebuild() { if (this.target) this.setter = this.smooth > 0 ? gsap.quickTo(this.target, this.prop, { duration: this.smooth, ease: 'power2.out' }) : null; }
+      // Input → 0..1 → curve → output
+      update(input) {
+        this.raw = input;
+        const t = clamp((input - this.inMin) / (this.inMax - this.inMin || 1));
+        const curved = gsap.parseEase(this.curve)(t);
+        this.value = this.outMin + (this.outMax - this.outMin) * curved;
+        if (this.apply) this.apply(this.value, curved);
+        else if (this.setter) this.setter(this.value);
+        else gsap.set(this.target, { [this.prop]: this.value });
+        return this.value;
+      }
+    }
+
+    gsap.set('#spoon', { x: 320, y: 190 });
+    const curryColour = gsap.utils.interpolate('#e6b85c', '#9c4a1c');
+    const maps = [
+      new Mapping({ key: 'x', label: 'palm x (palms from centre)', inMin: -3, inMax: 3, outMin: 200, outMax: 440, target: '#spoon', prop: 'x', smooth: 0.12, type: 'direct', anim: 'spoon left/right' }),
+      new Mapping({ key: 'y', label: 'palm y (palms from centre)', inMin: -2, inMax: 2, outMin: 150, outMax: 215, target: '#spoon', prop: 'y', smooth: 0.12, type: 'direct', anim: 'spoon depth' }),
+      new Mapping({ key: 'speed', label: 'hand speed (palms/s)', inMin: 0.3, inMax: 5, outMin: 0, outMax: 1, target: '#steam', prop: 'opacity', curve: 'power2.out', smooth: 0.8, type: 'continuous', anim: 'steam' }),
+      new Mapping({ key: 'total', label: 'distance stirred (palms)', inMin: 0, inMax: 120, outMin: 0, outMax: 1, curve: 'sine.inOut', smooth: 0, type: 'accumulate', anim: 'curry colour',
+                    apply: v => $('curry').setAttribute('fill', curryColour(v)) }),
+      new Mapping({ key: 'pinch', label: 'thumb–index (palms)', inMin: 0.25, inMax: 0.6, outMin: 1, outMax: 0, smooth: 0, type: 'event', anim: 'a pinch of spice', apply: v => pinchEvent(v) }),
+      new Mapping({ key: 'present', label: 'hand in view (0/1)', inMin: 0, inMax: 1, outMin: 0, outMax: 1, smooth: 0, type: 'state', anim: 'lid off / on', apply: v => lidState(v) })
+    ];
+
+    // Event mapping: fire once above 0.9, re-arm under 0.3 (hysteresis)
+    let pinchArmed = true;
+    function pinchEvent(v) {
+      if (pinchArmed && v > 0.9) { pinchArmed = false; sprinkle(); }
+      else if (!pinchArmed && v < 0.3) pinchArmed = true;
+    }
+    function sprinkle() {
+      const sx = gsap.getProperty('#spoon', 'x');
+      for (let i = 0; i < 14; i++) {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('r', 2 + Math.random() * 2); c.setAttribute('fill', gsap.utils.random(['#c4623a', '#d9a03a', '#8a3b1a']));
+        c.setAttribute('cx', sx); c.setAttribute('cy', 70);
+        $('particles').appendChild(c);
+        gsap.to(c, { attr: { cx: sx + gsap.utils.random(-40, 40), cy: 190 }, duration: gsap.utils.random(.4, .7), ease: 'power2.in', onComplete: () => c.remove() });
+      }
+    }
+    // State mapping: lid goes on only after the hand is gone for 800 ms (no flicker)
+    let goneSince = null, lidOn = true;
+    function lidState(v) {
+      const now = performance.now();
+      if (v > 0.5) { goneSince = null; if (lidOn) { lidOn = false; gsap.to('#lid', { y: -140, x: 160, rotation: 20, opacity: 0, duration: 0.6, ease: 'power2.inOut' }); } }
+      else {
+        goneSince = goneSince ?? now;
+        if (!lidOn && now - goneSince > 800) { lidOn = true; gsap.to('#lid', { y: 0, x: 0, rotation: 0, opacity: 1, duration: 0.6, ease: 'power2.inOut' }); }
+      }
+    }
+
+    // ---------- Editable table ----------
+    const CURVES = ['none', 'power1.in', 'power2.out', 'power3.out', 'sine.inOut', 'expo.in', 'steps(4)'];
+    function buildTable() {
+      $('map').tBodies[0].innerHTML = maps.map((m, i) => `
+        <tr>
+          <td>${m.label}</td>
+          <td><input type="number" step="0.05" data-i="${i}" data-k="inMin" value="${m.inMin}"></td>
+          <td><input type="number" step="0.05" data-i="${i}" data-k="inMax" value="${m.inMax}"></td>
+          <td><select data-i="${i}" data-k="curve">${CURVES.map(c => `<option ${c === m.curve ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
+          <td><input type="number" step="0.05" min="0" data-i="${i}" data-k="smooth" value="${m.smooth}" ${m.apply ? 'disabled' : ''}></td>
+          <td>${m.anim}</td><td>${m.type}</td><td class="live" id="live${i}">–</td>
+        </tr>`).join('');
+      $('map').querySelectorAll('input, select').forEach(el => el.addEventListener('change', () => {
+        const m = maps[el.dataset.i];
+        m[el.dataset.k] = el.tagName === 'SELECT' ? el.value : parseFloat(el.value);
+        if (el.dataset.k === 'smooth') m.rebuild();
+      }));
+    }
+
+    // ---------- Signals ----------
+    let total = 0, last = null, speed = 0;
+    function signals({ x, y, pinch, present }, now) {
+      if (present && last) {
+        const dt = (now - last.t) / 1000;
+        const step = Math.hypot(x - last.x, y - last.y);
+        if (dt > 0 && step < 2) { speed = speed * 0.6 + (step / dt) * 0.4; total += step; }   // a jump of > 2 palms is a glitch, not stirring
+      }
+      if (!present) speed *= 0.85;
+      last = present ? { x, y, t: now } : null;
+      const input = { x, y, speed, total, pinch, present: present ? 1 : 0 };
+      maps.forEach((m, i) => {
+        if (!present && m.type === 'direct') return;              // the spoon stays where you left it
+        m.update(input[m.key]);
+        $('live' + i).textContent = `${(+m.raw).toFixed(2)} → ${(+m.value).toFixed(2)}`;
+      });
+      $('sTotal').textContent = total.toFixed(1) + ' palms';
+    }
+
+    // Camera: palm centre in palms, relative to the image centre
+    let handPose = null, hand = null;
+    function fromHand(now) {
+      if (!hand) return signals({ x: 0, y: 0, pinch: 1, present: false }, now);
+      const kp = hand.keypoints, palm = Exp.palmSize(kp), ids = [0, 5, 9, 13, 17];
+      const cx = ids.reduce((s, i) => s + kp[i].x, 0) / 5, cy = ids.reduce((s, i) => s + kp[i].y, 0) / 5;
+      signals({ x: (cx - 320) / palm, y: (cy - 240) / palm, pinch: Exp.pinchDistance(kp), present: true }, now);
+    }
+
+    // Mouse: 50 px = 1 palm, click = pinch
+    let mouse = null, mouseDown = false;
+    const scene = $('scene');
+    scene.addEventListener('mousemove', e => { const r = scene.getBoundingClientRect(); mouse = { x: (e.clientX - r.left - r.width / 2) / 50, y: (e.clientY - r.top - r.height / 2) / 50 }; });
+    scene.addEventListener('mouseleave', () => { mouse = null; });
+    scene.addEventListener('mousedown', () => mouseDown = true);
+    addEventListener('mouseup', () => mouseDown = false);
+
+    buildTable();
+    (function loop() {
+      const now = performance.now();
+      if (handPose) fromHand(now);
+      else signals(mouse ? { ...mouse, pinch: mouseDown ? 0.1 : 1, present: true } : { x: 0, y: 0, pinch: 1, present: false }, now);
+      octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
+      if (hand) Exp.drawHand(octx, hand.keypoints);
+      $('sHand').textContent = handPose ? (hand ? 'seen' : 'not seen') : (mouse ? 'mouse' : 'mouse gone');
+      $('sFps').textContent = handPose ? fps.value.toFixed(1) : '–';
+      requestAnimationFrame(loop);
+    })();
+
+    $('start').addEventListener('click', async () => {
+      $('start').disabled = true;
+      try {
+        await Exp.startCamera($('video'), $('overlay'));
+        $('status').textContent = 'Loading HandPose…';
+        handPose = await Exp.withTimeout(ml5.handPose({ maxHands: 1, flipped: true, modelType: 'full' }), 45000);
+        handPose.detectStart($('video'), r => { fps.tick(); hand = r[0] || null; });
+        $('status').textContent = 'Hold your hand over the pot and stir. Pinch to add spice. Take your hand away and the lid goes on.';
+      } catch (err) { $('start').disabled = false; handPose = null; $('status').textContent = Exp.cameraMessage(err); console.error(err); }
+    });
+    $('reset').addEventListener('click', () => { total = 0; });
+    $('copy').addEventListener('click', () => log.copy());
+    $('dump').addEventListener('click', () => {
+      log.line(`mapping @ ${new Date().toLocaleTimeString()} (${handPose ? 'camera' : 'mouse'})`);
+      maps.forEach(m => log.line(`  ${m.label} [${m.inMin}..${m.inMax}] ${m.curve} smooth ${m.smooth}s → ${m.anim} (${m.type})`));
+    });
+
+  </script>
+</body>
+</html>

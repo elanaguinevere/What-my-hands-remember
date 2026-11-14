@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E7 · Cooking animations (GSAP)</title>
+  <style>
+    :root { --paper: #f3ece0; --ink: #2b2622; --accent: #c4623a; --night: #1d1a24; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: auto; }   /* ScrollTo does the smooth scrolling */
+    body { margin: 0; font-family: Georgia, serif; background: var(--paper); color: var(--ink); }
+    section { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0 8vw; position: relative; }
+    h1 { font-weight: normal; font-size: clamp(2.5rem, 6vw, 5rem); margin: 0; text-align: center; }
+    h2 { font-weight: normal; margin: 0 0 .3rem; }
+    .note { font-family: monospace; font-size: .85rem; opacity: .6; margin: 0 0 1.5rem; text-align: center; max-width: 60ch; }
+    .quote { font-size: clamp(1.6rem, 3.5vw, 2.8rem); max-width: 22ch; text-align: center; line-height: 1.25; }
+    svg.art { width: min(80vw, 720px); height: auto; display: block; overflow: visible; }
+    #progress { position: fixed; top: 0; left: 0; height: 4px; width: 100%; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); z-index: 10; }
+    nav { position: fixed; right: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 10; }
+    nav a { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); display: block; }
+    nav a.active { background: var(--accent); border-color: var(--accent); }
+    body.dark nav a { border-color: var(--paper); }
+    #alone { background: var(--night); color: var(--paper); }
+    .finale { font-size: clamp(1.8rem, 4vw, 3rem); text-align: center; }
+    .legend { position: fixed; left: 18px; bottom: 14px; font-family: monospace; font-size: .75rem; opacity: .55; z-index: 10; }
+  </style>
+</head>
+<body>
+  <div id="progress"></div>
+  <nav aria-label="Steps">
+    <a href="#intro" title="Intro"></a><a href="#grind" title="Grind"></a><a href="#stir" title="Stir"></a>
+    <a href="#taste" title="Taste"></a><a href="#alone" title="On your own"></a><a href="#end" title="End"></a>
+  </nav>
+  <div class="legend">E7 · ScrollTrigger + SplitText + MorphSVG + DrawSVG + MotionPath + ScrollTo · add ?markers to the URL to see the triggers</div>
+
+  <section id="intro">
+    <h1 class="title">What my hands remember</h1>
+    <p class="note">SplitText: the title comes in letter by letter. Scroll down.</p>
+  </section>
+
+  <section id="quote">
+    <p class="quote" id="quoteText">She never used measuring spoons. The food tells you what it needs.</p>
+    <p class="note">SplitText + ScrollTrigger scrub: every word darkens as you scroll past it.</p>
+  </section>
+
+  <section id="grind">
+    <h2>Grind the spices</h2>
+    <p class="note">MorphSVG, scrubbed: whole seeds morph into a pile of powder, colour shifts.</p>
+    <svg class="art" viewBox="0 0 640 360">
+      <ellipse cx="320" cy="300" rx="190" ry="26" fill="#c9b79a"/>
+      <path d="M150,170 Q160,300 320,300 Q480,300 490,170 Z" fill="#8f8577" stroke="#2b2622" stroke-width="3"/>
+      <ellipse cx="320" cy="170" rx="170" ry="34" fill="#6f665a" stroke="#2b2622" stroke-width="3"/>
+      <!-- Start shape: three seeds as one path -->
+      <path id="seeds" fill="#6b3f1f" stroke="#2b2622" stroke-width="2"
+            d="M250,172 C250,160 280,160 280,172 C280,184 250,184 250,172 Z M305,166 C305,154 335,154 335,166 C335,178 305,178 305,166 Z M360,174 C360,162 390,162 390,174 C390,186 360,186 360,174 Z"/>
+      <!-- End shape (hidden): a low pile of powder -->
+      <path id="powder" style="display:none" d="M200,180 C230,150 280,140 320,140 C360,140 410,150 440,180 C400,188 240,188 200,180 Z"/>
+    </svg>
+  </section>
+
+  <section id="stir">
+    <h2>Stir</h2>
+    <p class="note">Pinned + scrubbed timeline: DrawSVG draws the steam, the curry thickens and darkens.</p>
+    <svg class="art" viewBox="0 0 640 360">
+      <g fill="none" stroke="#bdb3a5" stroke-width="6" stroke-linecap="round">
+        <path class="steam" d="M260,140 C240,110 280,90 260,60 C245,40 270,25 262,10"/>
+        <path class="steam" d="M320,130 C300,100 340,80 320,45 C305,25 330,10 322,-5"/>
+        <path class="steam" d="M380,140 C360,110 400,90 380,60 C365,40 390,25 382,10"/>
+      </g>
+      <path d="M130,170 L150,320 Q320,350 490,320 L510,170 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+      <ellipse id="curry" cx="320" cy="170" rx="190" ry="34" fill="#e6b85c" stroke="#2b2622" stroke-width="3"/>
+      <path id="swirl" d="M220,170 C260,150 380,150 420,170 C380,190 260,190 250,172" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="4"/>
+    </svg>
+  </section>
+
+  <section id="taste">
+    <h2>Too spicy?</h2>
+    <p class="note">MotionPath, scrubbed: a spoon of yogurt arcs into the pot (path shown dashed).</p>
+    <svg class="art" viewBox="0 0 640 360">
+      <path id="arc" d="M600,40 C520,-10 380,40 320,165" fill="none" stroke="#c4623a" stroke-dasharray="6 8" stroke-width="2" opacity=".5"/>
+      <path d="M130,170 L150,320 Q320,350 490,320 L510,170 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+      <ellipse id="curry2" cx="320" cy="170" rx="190" ry="34" fill="#9c4a1c" stroke="#2b2622" stroke-width="3"/>
+      <ellipse id="yogurt" cx="320" cy="168" rx="0" ry="0" fill="#fbf6ec"/>
+      <g id="spoon">
+        <ellipse cx="0" cy="0" rx="24" ry="13" fill="#b88a5a" stroke="#2b2622" stroke-width="2.5"/>
+        <ellipse cx="0" cy="-3" rx="16" ry="6" fill="#fbf6ec"/>
+        <rect x="20" y="-4" width="64" height="8" rx="4" fill="#b88a5a" stroke="#2b2622" stroke-width="2.5"/>
+      </g>
+    </svg>
+  </section>
+
+  <section id="alone">
+    <h2>On your own</h2>
+    <p class="note">Pinned: her kitchen fades into mine at night, the recipe card wipes blank (DrawSVG in reverse).</p>
+    <svg class="art" viewBox="0 0 640 360">
+      <rect id="herKitchen" width="640" height="360" rx="12" fill="#f0c98a"/>
+      <rect id="myKitchen" width="640" height="360" rx="12" fill="#2a2638" opacity="0"/>
+      <circle id="lamp" cx="320" cy="40" r="26" fill="#ffd27a" opacity=".25"/>
+      <g transform="translate(60 90)">
+        <rect width="170" height="210" rx="6" fill="#fbf6ec" stroke="#2b2622" stroke-width="3"/>
+        <g class="recipe" stroke="#2b2622" stroke-width="4" stroke-linecap="round">
+          <path d="M20,40 H150"/><path d="M20,70 H130"/><path d="M20,100 H145"/><path d="M20,130 H110"/><path d="M20,160 H140"/>
+        </g>
+      </g>
+      <path d="M330,200 L345,320 Q450,340 555,320 L570,200 Z" fill="#3b3430" stroke="#fbf6ec" stroke-width="3"/>
+      <ellipse cx="450" cy="200" rx="120" ry="22" fill="#9c4a1c" stroke="#fbf6ec" stroke-width="3"/>
+    </svg>
+  </section>
+
+  <section id="end">
+    <p class="finale" id="finale">I don't need the recipe. I have her hands.</p>
+    <button id="again" style="margin-top:2rem;font:inherit;padding:.6rem 1.2rem;background:#c4623a;color:#fff;border:0;border-radius:6px;cursor:pointer">Begin again ↑</button>
+  </section>
+
+  <script src="../../js/lib/gsap.min.js"></script>
+  <script src="../../js/lib/ScrollTrigger.min.js"></script>
+  <script src="../../js/lib/ScrollToPlugin.min.js"></script>
+  <script src="../../js/lib/SplitText.min.js"></script>
+  <script src="../../js/lib/DrawSVGPlugin.min.js"></script>
+  <script src="../../js/lib/MorphSVGPlugin.min.js"></script>
+  <script src="../../js/lib/MotionPathPlugin.min.js"></script>
+  <script>
+    gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, SplitText, DrawSVGPlugin, MorphSVGPlugin, MotionPathPlugin);
+    const markers = new URLSearchParams(location.search).has('markers');
+    ScrollTrigger.defaults({ markers });
+
+    // gsap.matchMedia: full animation normally, a calmer version for "reduce motion" users
+    const mm = gsap.matchMedia();
+    mm.add({ full: '(prefers-reduced-motion: no-preference)', reduced: '(prefers-reduced-motion: reduce)' }, ctx => {
+      const { reduced } = ctx.conditions;
+
+      // ---- SplitText: title letter by letter (autoSplit re-splits when fonts load / on resize) ----
+      SplitText.create('.title', {
+        type: 'chars', autoSplit: true,
+        onSplit: self => gsap.from(self.chars, { yPercent: reduced ? 0 : 110, opacity: 0, stagger: reduced ? 0 : 0.04, duration: reduced ? 0.6 : 0.9, ease: 'power3.out' })
+      });
+
+      // ---- SplitText + scrub: words go from faint to ink ----
+      SplitText.create('#quoteText', {
+        type: 'words', autoSplit: true,
+        onSplit: self => gsap.fromTo(self.words, { opacity: 0.15 }, {
+          opacity: 1, stagger: 0.1, ease: 'none',
+          scrollTrigger: { trigger: '#quote', start: 'top 70%', end: 'bottom 60%', scrub: true }
+        })
+      });
+
+      // ---- MorphSVG: seeds → powder ----
+      gsap.timeline({ scrollTrigger: { trigger: '#grind', start: 'top 60%', end: 'bottom 40%', scrub: 1 } })
+        .to('#seeds', { morphSVG: { shape: '#powder', type: 'rotational' }, fill: '#d9a03a', ease: 'none' });
+
+      // ---- Pinned stir: DrawSVG steam + curry colour + swirl rotation ----
+      gsap.set('.steam', { drawSVG: '0%' });
+      gsap.timeline({ scrollTrigger: { trigger: '#stir', start: 'top top', end: '+=150%', pin: true, scrub: 1 } })
+        .to('#swirl', { rotation: reduced ? 90 : 720, svgOrigin: '320 170', ease: 'none', duration: 1 }, 0)
+        .to('#curry', { attr: { fill: '#9c4a1c' }, ease: 'none', duration: 1 }, 0)
+        .to('.steam', { drawSVG: '100%', stagger: 0.15, duration: 0.6, ease: 'power1.out' }, 0.3);
+
+      // ---- MotionPath: yogurt spoon along the arc ----
+      gsap.timeline({ scrollTrigger: { trigger: '#taste', start: 'top 60%', end: 'bottom 50%', scrub: 1 } })
+        .to('#spoon', { motionPath: { path: '#arc', align: '#arc', alignOrigin: [0.5, 0.5], autoRotate: !reduced }, ease: 'power1.inOut', duration: 1 })
+        .to('#yogurt', { attr: { rx: 40, ry: 9 }, duration: 0.3 })
+        .to('#curry2', { attr: { fill: '#c97a45' }, duration: 0.3 }, '<');
+
+      // ---- Pinned finale scene: kitchens crossfade, recipe card wipes blank, lamp warms ----
+      gsap.timeline({
+        scrollTrigger: {
+          trigger: '#alone', start: 'top top', end: '+=200%', pin: true, scrub: 1,
+          onToggle: self => document.body.classList.toggle('dark', self.isActive)
+        }
+      })
+        .to('#myKitchen', { opacity: 1, duration: 1 })
+        .to('#lamp', { opacity: 1, attr: { r: 40 }, duration: 1 }, '<.3')
+        .fromTo('.recipe path', { drawSVG: '100%' }, { drawSVG: '100% 100%', stagger: 0.2, duration: 0.6 }, '<.4');
+
+      // ---- Finale line ----
+      SplitText.create('#finale', {
+        type: 'words', mask: 'words', autoSplit: true,
+        onSplit: self => gsap.from(self.words, { yPercent: 100, stagger: 0.12, duration: 0.8, ease: 'power2.out', scrollTrigger: { trigger: '#end', start: 'top 60%', toggleActions: 'play none none reverse' } })
+      });
+    });
+
+    // ---- Progress bar + active dot (ScrollTrigger callbacks, no animation) ----
+    gsap.to('#progress', { scaleX: 1, ease: 'none', scrollTrigger: { start: 0, end: 'max', scrub: 0.3 } });
+    const dots = [...document.querySelectorAll('nav a')];
+    dots.forEach(dot => ScrollTrigger.create({
+      trigger: dot.getAttribute('href'), start: 'top center', end: 'bottom center',
+      onToggle: self => self.isActive && dots.forEach(d => d.classList.toggle('active', d === dot))
+    }));
+
+    // ---- ScrollTo: smooth navigation (also works with the pinned sections) ----
+    dots.forEach(dot => dot.addEventListener('click', e => {
+      e.preventDefault();
+      gsap.to(window, { scrollTo: { y: dot.getAttribute('href'), autoKill: true }, duration: 1.2, ease: 'power2.inOut' });
+    }));
+    document.getElementById('again').addEventListener('click', () => gsap.to(window, { scrollTo: 0, duration: 1.5, ease: 'power2.inOut' }));
+  </script>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E4 · Grind & stir (circular motion)</title>
+  <link rel="stylesheet" href="../shared/exp.css">
+  <style>
+    #path { width: 100%; height: 240px; background: #fff; border-radius: 6px; border: 1px solid rgba(43,38,34,.2); }
+    .modes button.active { background: var(--ink); color: var(--paper); }
+  </style>
+</head>
+<body>
+  <h1>E4 · Grind the spices &amp; stir the pot</h1>
+  <p class="question">
+    <strong>Question:</strong> can I turn a circling hand into "number of turns" and "turning speed", and tell grinding (fist) apart from stirring (open hand)?<br>
+    <strong>Pass:</strong> 5 real circles give 5 ± 0.5 turns; a still hand, chopping up and down or waving side to side gives fewer than 0.5 turns; the wrong hand shape turns nothing.
+  </p>
+
+  <div class="layout">
+    <div class="left">
+      <div class="row modes">
+        <button class="secondary active" data-mode="grind">Grind (fist)</button>
+        <button class="secondary" data-mode="stir">Stir (open hand)</button>
+      </div>
+      <div class="scene" id="scene">
+        <svg viewBox="0 0 640 360" aria-hidden="true">
+          <!-- Mortar (grind) -->
+          <g id="mortar">
+            <ellipse cx="320" cy="300" rx="190" ry="26" fill="#c9b79a"/>
+            <path d="M150,170 Q160,300 320,300 Q480,300 490,170 Z" fill="#8f8577" stroke="#2b2622" stroke-width="3"/>
+            <ellipse cx="320" cy="170" rx="170" ry="34" fill="#6f665a" stroke="#2b2622" stroke-width="3"/>
+            <g id="seeds"></g>
+            <g id="pestle"><rect x="-14" y="-110" width="28" height="120" rx="14" fill="#a49886" stroke="#2b2622" stroke-width="3"/></g>
+          </g>
+          <!-- Pot (stir) -->
+          <g id="pot" style="display:none">
+            <g id="steam" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity="0">
+              <path d="M260,120 C240,90 280,70 260,40"/><path d="M320,110 C300,80 340,60 320,25"/><path d="M380,120 C360,90 400,70 380,40"/>
+            </g>
+            <path d="M130,170 L150,320 Q320,350 490,320 L510,170 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+            <ellipse id="curry" cx="320" cy="170" rx="190" ry="34" fill="#e6b85c" stroke="#2b2622" stroke-width="3"/>
+            <path id="swirl" d="M220,170 C260,150 380,150 420,170 C380,190 260,190 250,172" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="4"/>
+            <g id="spoon"><rect x="-8" y="-120" width="16" height="125" rx="8" fill="#b88a5a" stroke="#2b2622" stroke-width="3"/></g>
+          </g>
+        </svg>
+        <div class="badge" id="badge">Slowly… the food tells you what it needs.</div>
+      </div>
+      <canvas id="path" width="1280" height="480"></canvas>
+      <small>Path of your palm for the last 1.5 s (palms). Grey ring = fitted circle. Green = the path counts as circular, red = it doesn't.</small>
+    </div>
+
+    <div class="panel">
+      <button id="start">Turn on camera</button>
+      <p class="status" id="status">Camera is off. Mouse mode: move the mouse in circles over the mortar or pot.</p>
+      <div class="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div>
+
+      <dl class="stats">
+        <dt>turns</dt><dd id="sTurns">0.00</dd>
+        <dt>speed</dt><dd id="sSpeed">–</dd>
+        <dt>direction</dt><dd id="sDir">–</dd>
+        <dt>radius</dt><dd id="sRadius">–</dd>
+        <dt>roundness (CV)</dt><dd id="sCv">–</dd>
+        <dt>hand shape</dt><dd id="sShape">–</dd>
+        <dt>progress</dt><dd id="sProgress">0%</dd>
+        <dt>detection fps</dt><dd id="sFps">–</dd>
+      </dl>
+
+      <div class="settings">
+        <label>min. radius (palms) <input type="range" id="tRadius" min="0.1" max="2" step="0.05" value="0.35"> <span id="vRadius">0.35</span></label>
+        <label>max. CV (roundness) <input type="range" id="tCv" min="0.1" max="1" step="0.05" value="0.45"> <span id="vCv">0.45</span></label>
+        <label>fist below openness <input type="range" id="tFist" min="0.8" max="2" step="0.05" value="1.25"> <span id="vFist">1.25</span></label>
+        <label>turns to finish <input type="range" id="tGoal" min="2" max="12" step="1" value="6"> <span id="vGoal">6</span></label>
+        <label>too fast above (turns/s) <input type="range" id="tFast" min="0.5" max="3" step="0.1" value="1.5"> <span id="vFast">1.5</span></label>
+        <small>Roundness = spread of the distance to the centre ÷ average distance. A perfect circle is 0, a straight line about 0.6 or more.</small>
+      </div>
+
+      <label class="row">Which test is this round?
+        <select id="roundType">
+          <option value="five">1 · five slow circles (right shape)</option>
+          <option value="still">2 · hand still for 10 s</option>
+          <option value="chop">3 · chopping up and down</option>
+          <option value="wave">4 · waving side to side</option>
+          <option value="wrong">5 · circles with the wrong hand shape</option>
+          <option value="fast">6 · circles as fast as I can</option>
+          <option value="tuning">tuning</option>
+        </select>
+      </label>
+      <div class="row">
+        <button class="secondary" id="reset">Reset</button>
+        <button class="secondary" id="logRound">Log this round + reset</button>
+        <button class="secondary" id="copy">Copy log</button>
+      </div>
+      <pre class="log" id="log">Test plan per mode (grind + stir): 5 slow circles → still → chop → wave → wrong shape → as fast as you can. Log each round.</pre>
+    </div>
+  </div>
+
+  <script src="../../js/lib/gsap.min.js"></script>
+  <script src="../../js/lib/ml5.min.js"></script>
+  <script src="../shared/exp.js"></script>
+  <script>
+    const { $, clamp, lerp } = Exp;
+    const settings = Exp.bindSliders(['Radius', 'Cv', 'Fist', 'Goal', 'Fast'], {});
+    const log = Exp.makeLog($('log'));
+    const fps = Exp.fpsMeter();
+    const octx = $('overlay').getContext('2d');
+    const pctx = $('path').getContext('2d');
+
+    let mode = 'grind';
+
+    // ---------- Circle tracker ----------
+    // Keeps the last 1.5 s of palm positions (in palms), fits a centre (= the mean),
+    // and adds up the change in angle around that centre while the path is round enough.
+    const WINDOW = 1500;
+    const tracker = {
+      pts: [], total: 0, lastAngle: null, turnLog: [], cx: 0, cy: 0, r: 0, cv: 1, ok: false,
+      reset() { this.pts = []; this.total = 0; this.lastAngle = null; this.turnLog = []; this.ok = false; },
+      lose() { this.pts = []; this.lastAngle = null; this.ok = false; },
+      add(x, y, now, shapeOk) {
+        this.pts.push({ x, y, t: now });
+        while (this.pts.length && now - this.pts[0].t > WINDOW) this.pts.shift();
+        if (this.pts.length < 8) { this.lastAngle = null; return 0; }
+        this.cx = this.pts.reduce((s, p) => s + p.x, 0) / this.pts.length;
+        this.cy = this.pts.reduce((s, p) => s + p.y, 0) / this.pts.length;
+        const d = this.pts.map(p => Math.hypot(p.x - this.cx, p.y - this.cy));
+        this.r = d.reduce((s, v) => s + v, 0) / d.length;
+        const sd = Math.sqrt(d.reduce((s, v) => s + (v - this.r) ** 2, 0) / d.length);
+        this.cv = this.r ? sd / this.r : 1;
+        // A line back and forth also has a "mean", but its angle flips by ~π each pass.
+        // The CV + minimum radius check filters those out.
+        this.ok = this.r >= settings.Radius && this.cv <= settings.Cv;
+
+        const angle = Math.atan2(y - this.cy, x - this.cx);
+        let dA = 0;
+        if (this.lastAngle !== null) {
+          dA = angle - this.lastAngle;
+          if (dA > Math.PI) dA -= 2 * Math.PI;
+          if (dA < -Math.PI) dA += 2 * Math.PI;
+          if (Math.abs(dA) > 1.2) dA = 0;            // a jump, not a movement
+        }
+        this.lastAngle = angle;
+        if (!this.ok || !shapeOk) return 0;
+        this.total += dA;
+        this.turnLog.push({ t: now, dA });
+        while (this.turnLog.length && now - this.turnLog[0].t > 1000) this.turnLog.shift();
+        return dA;
+      },
+      get turns() { return Math.abs(this.total) / (2 * Math.PI); },
+      get speed() { return Math.abs(this.turnLog.reduce((s, e) => s + e.dA, 0)) / (2 * Math.PI); }, // turns in the last second
+      get dir() { return this.total === 0 ? '–' : (this.total > 0 ? 'clockwise' : 'anticlockwise'); }
+    };
+
+    // ---------- Mapping: turns + speed → animation ----------
+    const SEEDS = 14;
+    const seeds = [];
+    function buildSeeds() {
+      $('seeds').innerHTML = '';
+      seeds.length = 0;
+      for (let i = 0; i < SEEDS; i++) {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        const a = (i / SEEDS) * Math.PI * 2;
+        c.setAttribute('cx', 320 + Math.cos(a) * (40 + (i % 3) * 30));
+        c.setAttribute('cy', 175 + Math.sin(a) * (10 + (i % 3) * 6));
+        c.setAttribute('rx', 9); c.setAttribute('ry', 6);
+        c.setAttribute('fill', '#6b3f1f'); c.setAttribute('stroke', '#2b2622'); c.setAttribute('stroke-width', 1.5);
+        $('seeds').appendChild(c);
+        seeds.push(c);
+      }
+    }
+    // quickTo = smooth, cheap tweens that we can call every frame
+    const pestleRot = gsap.quickTo('#pestle', 'rotation', { duration: 0.15 });
+    const spoonRot = gsap.quickTo('#spoon', 'rotation', { duration: 0.15 });
+    const steamOp = gsap.quickTo('#steam', 'opacity', { duration: 0.6 });
+    gsap.set(['#pestle', '#spoon'], { x: 320, y: 175, transformOrigin: '50% 100%' });
+
+    let tooFastSince = null;
+    function render(now) {
+      const progress = clamp(tracker.turns / settings.Goal);
+      $('sProgress').textContent = Math.round(progress * 100) + '%';
+      const lean = Math.atan2((tracker.pts.at(-1)?.y ?? tracker.cy) - tracker.cy, (tracker.pts.at(-1)?.x ?? tracker.cx) - tracker.cx);
+      if (mode === 'grind') {
+        // Each seed cracks at its own moment; whole brown seeds → small yellow-orange powder
+        seeds.forEach((s, i) => {
+          const local = clamp(progress * SEEDS - i * 0.6, 0, 1);
+          s.setAttribute('rx', lerp(9, 16, local)); s.setAttribute('ry', lerp(6, 3, local));
+          s.setAttribute('fill', gsap.utils.interpolate('#6b3f1f', '#d9a03a', local));
+          s.setAttribute('stroke-width', lerp(1.5, 0, local));
+        });
+        pestleRot(Math.cos(lean) * 18);
+      } else {
+        // Stir: curry thickens and darkens with turns, steam follows speed
+        $('curry').setAttribute('fill', gsap.utils.interpolate('#e6b85c', '#9c4a1c', progress));
+        $('swirl').setAttribute('stroke', `rgba(255,255,255,${lerp(.45, .12, progress)})`);
+        gsap.set('#swirl', { rotation: tracker.total * 57.3 * 0.5, svgOrigin: '320 170' });
+        spoonRot(Math.cos(lean) * 14);
+        steamOp(clamp(tracker.speed / 1.2) * lerp(0.3, 1, progress));
+      }
+      // Too fast: a badge (later: mom's hand slows yours)
+      const fast = tracker.speed > settings.Fast;
+      if (fast && tooFastSince === null) tooFastSince = now;
+      if (!fast) tooFastSince = null;
+      $('badge').classList.toggle('show', tooFastSince !== null && now - tooFastSince > 300);
+    }
+
+    // ---------- Path graph ----------
+    function drawPath() {
+      const W = $('path').width, H = $('path').height;
+      const s = Math.min(110, (H / 2 - 20) / Math.max(tracker.r, settings.Radius, 0.01));   // zoom out for big circles
+      pctx.clearRect(0, 0, W, H);
+      if (!tracker.pts.length) return;
+      const X = x => W / 2 + (x - tracker.cx) * s, Y = y => H / 2 + (y - tracker.cy) * s;
+      pctx.strokeStyle = 'rgba(43,38,34,.2)'; pctx.lineWidth = 3;
+      pctx.beginPath(); pctx.arc(W / 2, H / 2, tracker.r * s, 0, Math.PI * 2); pctx.stroke();
+      pctx.strokeStyle = 'rgba(196,98,58,.5)'; pctx.setLineDash([6, 6]);
+      pctx.beginPath(); pctx.arc(W / 2, H / 2, settings.Radius * s, 0, Math.PI * 2); pctx.stroke(); pctx.setLineDash([]);
+      pctx.strokeStyle = tracker.ok ? '#3f7d4e' : '#b8402a'; pctx.lineWidth = 4;
+      pctx.beginPath();
+      tracker.pts.forEach((p, i) => i ? pctx.lineTo(X(p.x), Y(p.y)) : pctx.moveTo(X(p.x), Y(p.y)));
+      pctx.stroke();
+    }
+
+    // ---------- Inputs ----------
+    let handPose = null, hands = [], shape = '–';
+    function onHand(hand, now) {
+      const kp = hand.keypoints;
+      const palm = Exp.palmSize(kp);
+      const open = Exp.openness(kp);
+      shape = open < settings.Fist ? 'fist' : 'open';
+      const shapeOk = (mode === 'grind') === (shape === 'fist');
+      // Palm centre = average of wrist and the four finger bases (steadier than one point)
+      const ids = [0, 5, 9, 13, 17];
+      const x = ids.reduce((s, i) => s + kp[i].x, 0) / ids.length / palm;
+      const y = ids.reduce((s, i) => s + kp[i].y, 0) / ids.length / palm;
+      tracker.add(x, y, now, shapeOk);
+      $('sShape').textContent = `${shape} (${open.toFixed(2)})${shapeOk ? '' : ' ← wrong shape'}`;
+      if (!shapeOk) $('status').textContent = mode === 'grind' ? 'Make a fist to hold the pestle.' : 'Open your hand to hold the spoon.';
+      else $('status').textContent = mode === 'grind' ? 'Grind in circles above the mortar.' : 'Stir slowly in circles.';
+    }
+
+    // Mouse mode: the mouse is the palm (40 px = 1 palm), shape is always right
+    $('scene').addEventListener('mousemove', e => {
+      if (handPose) return;
+      const now = performance.now();
+      const r = $('scene').getBoundingClientRect();   // not e.offsetX: on SVG children that is relative to the child
+      tracker.add((e.clientX - r.left) / 40, (e.clientY - r.top) / 40, now, true);
+      $('sShape').textContent = 'mouse';
+    });
+    $('scene').addEventListener('mouseleave', () => { if (!handPose) tracker.lose(); });
+
+    function loop() {
+      const now = performance.now();
+      octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
+      if (hands.length) Exp.drawHand(octx, hands[0].keypoints);
+      render(now);
+      drawPath();
+      $('sTurns').textContent = tracker.turns.toFixed(2);
+      $('sSpeed').textContent = tracker.speed.toFixed(2) + ' turns/s';
+      $('sDir').textContent = tracker.dir;
+      $('sRadius').textContent = tracker.r.toFixed(2) + ' palms';
+      $('sCv').textContent = tracker.cv.toFixed(2) + (tracker.ok ? ' ✓' : ' ✗');
+      $('sFps').textContent = handPose ? fps.value.toFixed(1) : '–';
+      requestAnimationFrame(loop);
+    }
+
+    async function start() {
+      await Exp.startCamera($('video'), $('overlay'));
+      $('status').textContent = 'Loading HandPose…';
+      handPose = await Exp.withTimeout(ml5.handPose({ maxHands: 1, flipped: true, modelType: 'full' }), 45000);
+      handPose.detectStart($('video'), results => {
+        hands = results;
+        const now = performance.now();
+        fps.tick(now);
+        if (results.length) onHand(results[0], now); else { tracker.lose(); $('sShape').textContent = 'no hand'; }
+      });
+    }
+
+    function setMode(m) {
+      mode = m;
+      document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+      $('mortar').style.display = m === 'grind' ? '' : 'none';
+      $('pot').style.display = m === 'stir' ? '' : 'none';
+      reset();
+    }
+    let roundStart = performance.now();
+    function reset() {
+      tracker.reset(); buildSeeds();
+      $('curry').setAttribute('fill', '#e6b85c');
+      roundStart = performance.now();
+    }
+
+    document.querySelectorAll('.modes button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    $('reset').addEventListener('click', reset);
+    $('copy').addEventListener('click', () => log.copy());
+
+    const ROUNDS = {
+      five:  { label: 'five slow circles', pass: () => Math.abs(tracker.turns - 5) <= 0.5, rule: '5 ± 0.5 turns' },
+      still: { label: 'hand still', pass: () => tracker.turns < 0.5, rule: '< 0.5 turns' },
+      chop:  { label: 'chop up and down', pass: () => tracker.turns < 0.5, rule: '< 0.5 turns' },
+      wave:  { label: 'wave side to side', pass: () => tracker.turns < 0.5, rule: '< 0.5 turns' },
+      wrong: { label: 'wrong hand shape', pass: () => tracker.turns < 0.5, rule: '< 0.5 turns' },
+      fast:  { label: 'as fast as I can', pass: () => peakSpeed > settings.Fast, rule: '"too fast" badge shows' },
+      tuning:{ label: 'tuning', pass: null, rule: '' }
+    };
+    let peakSpeed = 0;
+    setInterval(() => { peakSpeed = Math.max(peakSpeed, tracker.speed); }, 100);
+
+    $('logRound').addEventListener('click', () => {
+      if (performance.now() - roundStart < 3000) { $('status').textContent = 'That round was shorter than 3 s, not logged.'; return; }
+      const r = ROUNDS[$('roundType').value];
+      const verdict = r.pass ? (r.pass() ? 'PASS' : 'FAIL') + ` (expected ${r.rule})` : 'no verdict (tuning)';
+      log.line([
+        `${mode} · ${r.label} · ${new Date().toLocaleTimeString()} · ${((performance.now() - roundStart) / 1000).toFixed(0)} s`,
+        `  ${tracker.turns.toFixed(2)} turns · peak ${peakSpeed.toFixed(2)} turns/s · ${tracker.dir} · ${handPose ? 'camera' : 'mouse'}`,
+        `  settings: radius ≥ ${settings.Radius} · CV ≤ ${settings.Cv} · fist < ${settings.Fist} · fps ${fps.value.toFixed(1)}`,
+        `  ${verdict}`
+      ].join('\n'));
+      peakSpeed = 0;
+      reset();
+    });
+
+    $('start').addEventListener('click', async () => {
+      $('start').disabled = true;
+      try { await start(); }
+      catch (err) { $('start').disabled = false; handPose = null; $('status').textContent = Exp.cameraMessage(err); console.error(err); }
+    });
+
+    buildSeeds();
+    loop();
+  </script>
+</body>
+</html>

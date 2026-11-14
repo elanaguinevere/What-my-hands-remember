@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What my hands remember — making curry with my mom</title>
+  <meta name="description" content="An interactive story: cook one pot of curry next to my mom by copying her hands with your webcam.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,300;9..144,500&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Opened as a file? ES modules and the camera don't work there: say so before anything else fails -->
+  <script>
+    if (location.protocol === 'file:') document.documentElement.classList.add('is-file');
+  </script>
+</head>
+<body data-flow="intro">
+  <p class="file-warning">This page has to be served, not opened as a file. In the project folder run <code>npx serve</code> and open the localhost link.</p>
+
+  <!-- ===== HUD: always visible ===== -->
+  <header class="hud">
+    <div class="status"><span id="status-light" data-colour="grey"></span><span id="status-label"></span></div>
+    <nav id="progress" aria-label="Recipe steps" hidden></nav>
+    <button id="skip" class="link">skip this step</button>
+  </header>
+
+  <main id="scenes">
+    <!-- Intro -->
+    <section class="step" data-step="intro">
+      <div class="centre">
+        <h1></h1>
+        <p class="sub"></p>
+        <p class="lead"></p>
+        <button></button>
+      </div>
+    </section>
+
+    <!-- Setup: camera or mouse -->
+    <section class="step" data-step="setup">
+      <div class="centre">
+        <h2></h2>
+        <p class="lead"></p>
+        <div class="row"><button data-act="camera"></button><button data-act="mouse" class="secondary"></button></div>
+        <p class="message" aria-live="polite"></p>
+        <ul class="checks"></ul>
+      </div>
+    </section>
+
+    <!-- Teach your hands (self-trained classifier) -->
+    <section class="step" data-step="teach">
+      <div class="centre">
+        <h2></h2>
+        <p class="lead"></p>
+        <div class="shapes row"></div>
+        <p class="message" aria-live="polite"></p>
+        <div class="row"><button data-act="train" disabled></button><button data-act="skip" class="link"></button></div>
+      </div>
+    </section>
+
+    <!-- 1 · Chop -->
+    <section class="step" data-step="chop">
+      <div class="counter">
+        <figure class="mom"><div class="mom-hands" data-placeholder="her hands · chopping"></div><figcaption class="say" aria-live="polite"></figcaption></figure>
+        <div class="you">
+          <svg class="scene board" viewBox="0 0 640 280" aria-label="Cutting board with an onion">
+            <rect x="60" y="200" width="520" height="34" rx="10" class="wood"/>
+            <g class="onion"></g>
+            <path class="onion-root" d="M220,200 L220,130 C200,128 168,150 168,176 C168,192 180,200 196,200 Z"/>
+          </svg>
+          <p class="hint"></p>
+          <div class="step-progress"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 · Grind -->
+    <section class="step" data-step="grind">
+      <div class="counter">
+        <figure class="mom"><div class="mom-hands" data-placeholder="her hands · grinding"></div><figcaption class="say" aria-live="polite"></figcaption></figure>
+        <div class="you">
+          <svg class="scene" viewBox="0 0 640 360" aria-label="Mortar with whole spices">
+            <ellipse cx="320" cy="300" rx="190" ry="26" fill="#c9b79a"/>
+            <path d="M150,170 Q160,300 320,300 Q480,300 490,170 Z" fill="#8f8577" stroke="#2b2622" stroke-width="3"/>
+            <ellipse cx="320" cy="170" rx="170" ry="34" fill="#6f665a" stroke="#2b2622" stroke-width="3"/>
+            <g class="seeds"></g>
+          </svg>
+          <p class="hint"></p>
+          <div class="step-progress"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · Spices -->
+    <section class="step" data-step="spices">
+      <div class="counter">
+        <figure class="mom"><div class="mom-hands" data-placeholder="her hands · showing the number of pinches"></div><figcaption class="say" aria-live="polite"></figcaption></figure>
+        <div class="you">
+          <svg class="scene" viewBox="0 0 640 360" aria-label="Pot of curry">
+            <path d="M150,190 L170,330 Q320,355 470,330 L490,190 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+            <ellipse class="curry" cx="320" cy="190" rx="170" ry="30" fill="#e8c27a" stroke="#2b2622" stroke-width="3"/>
+            <g class="particles"></g>
+          </svg>
+          <p class="pinches"><span class="count">0</span> / <span class="target">3</span> pinches</p>
+          <p class="hint"></p>
+          <div class="step-progress"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 · Stir -->
+    <section class="step" data-step="stir">
+      <div class="counter">
+        <figure class="mom"><div class="mom-hands" data-placeholder="her hands · stirring"></div><figcaption class="say" aria-live="polite"></figcaption></figure>
+        <div class="you">
+          <svg class="scene" viewBox="0 0 640 360" aria-label="Pot of curry being stirred">
+            <g class="steam" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity="0">
+              <path d="M260,120 C240,90 280,70 260,40"/><path d="M320,110 C300,80 340,60 320,25"/><path d="M380,120 C360,90 400,70 380,40"/>
+            </g>
+            <path d="M130,170 L150,320 Q320,350 490,320 L510,170 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+            <ellipse class="curry" cx="320" cy="170" rx="190" ry="34" fill="#e6b85c" stroke="#2b2622" stroke-width="3"/>
+            <path class="swirl" d="M220,170 C260,150 380,150 420,170 C380,190 260,190 250,172" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="4"/>
+          </svg>
+          <p class="hint"></p>
+          <p class="too-fast-note">Slowly. It burns if you rush it.</p>
+          <div class="step-progress"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 · Taste -->
+    <section class="step" data-step="taste">
+      <div class="counter">
+        <figure class="mom"><div class="mom-hands" data-placeholder="her face · watching you taste"></div><figcaption class="say" aria-live="polite"></figcaption></figure>
+        <div class="you">
+          <svg class="scene" viewBox="0 0 640 360" aria-label="Tasting the curry">
+            <path class="yogurt-path" d="M600,40 C520,-10 380,40 320,165" fill="none"/>
+            <path d="M130,170 L150,320 Q320,350 490,320 L510,170 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+            <ellipse class="curry" cx="320" cy="170" rx="190" ry="34" fill="#9c4a1c" stroke="#2b2622" stroke-width="3"/>
+            <g class="spoon" opacity="0">
+              <ellipse cx="0" cy="0" rx="22" ry="12" fill="#b88a5a" stroke="#2b2622" stroke-width="2.5"/>
+              <ellipse cx="0" cy="-3" rx="15" ry="6" fill="#fbf6ec"/>
+              <rect x="18" y="-4" width="60" height="8" rx="4" fill="#b88a5a" stroke="#2b2622" stroke-width="2.5"/>
+            </g>
+          </svg>
+          <p class="hint"></p>
+          <div class="row mouse-only"><button class="secondary" data-face="h">hold: smile</button><button class="secondary" data-face="s">hold: too spicy</button></div>
+          <div class="step-progress"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · On your own (scroll) -->
+    <section class="step" data-step="alone">
+      <div class="sticky">
+        <svg class="kitchen" viewBox="0 0 640 360" aria-label="My own kitchen at night">
+          <rect width="640" height="360" fill="#2a2638"/>
+          <rect class="her-kitchen" width="640" height="360" fill="#f0c98a"/>
+          <circle class="lamp" cx="320" cy="40" r="40" fill="#ffd27a" opacity=".2"/>
+          <g transform="translate(60 90)">
+            <rect width="170" height="210" rx="6" fill="#fbf6ec" stroke="#2b2622" stroke-width="3"/>
+            <g class="recipe" stroke="#2b2622" stroke-width="4" stroke-linecap="round">
+              <path d="M20,40 H150"/><path d="M20,70 H130"/><path d="M20,100 H145"/><path d="M20,130 H110"/><path d="M20,160 H140"/>
+            </g>
+          </g>
+          <path d="M330,200 L345,320 Q450,340 555,320 L570,200 Z" fill="#3b3430" stroke="#fbf6ec" stroke-width="3"/>
+          <ellipse cx="450" cy="200" rx="120" ry="22" fill="#9c4a1c" stroke="#fbf6ec" stroke-width="3"/>
+        </svg>
+        <div class="lines"></div>
+        <p class="hint"></p>
+      </div>
+    </section>
+
+    <!-- Finale -->
+    <section class="step" data-step="finale">
+      <div class="centre">
+        <p class="finale-line"></p>
+        <button></button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Camera preview (small, so you can see your own hands) -->
+  <div id="pip" aria-hidden="true"><video id="video" autoplay playsinline muted></video></div>
+
+  <!-- Blocking notice (camera lost, small screen…) -->
+  <div id="notice" role="dialog" aria-modal="true" hidden>
+    <div class="card"><h2></h2><p></p><div class="actions row"></div></div>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Debug panel: press D, or add ?debug to the URL -->
+  <aside id="debug" hidden>
+    <strong>state</strong>
+    <div class="jump"></div>
+    <div class="row"><button data-act="mouse">force mouse</button><button data-act="lose">simulate camera lost</button></div>
+    <pre></pre>
+  </aside>
+
+  <!-- Static version when GSAP / JavaScript doesn't load -->
+  <div class="static-story">
+    <h1>What my hands remember</h1>
+    <p>She never used measuring spoons. Everything went in by pinches, handfuls and smell.</p>
+    <p>The food tells you what it needs.</p>
+    <p>I don't need the recipe. I have her hands.</p>
+    <p><small>The interactive version needs JavaScript and a recent browser.</small></p>
+  </div>
+  <noscript><style>.static-story { display: block !important; } #scenes, .hud { display: none; }</style></noscript>
+
+  <!-- GSAP up front (small); ml5 (4.5 MB) is lazy-loaded only when the visitor picks the camera -->
+  <script src="js/lib/gsap.min.js"></script>
+  <script src="js/lib/ScrollTrigger.min.js"></script>
+  <script src="js/lib/ScrollToPlugin.min.js"></script>
+  <script src="js/lib/SplitText.min.js"></script>
+  <script src="js/lib/DrawSVGPlugin.min.js"></script>
+  <script src="js/lib/MorphSVGPlugin.min.js"></script>
+  <script src="js/lib/MotionPathPlugin.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

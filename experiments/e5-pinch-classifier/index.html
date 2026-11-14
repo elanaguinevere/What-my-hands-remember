@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E5 · Self-trained hand shapes + one pinch = one spice</title>
+  <link rel="stylesheet" href="../shared/exp.css">
+  <style>
+    .classes { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+    .classes button { display: flex; flex-direction: column; align-items: center; gap: .2rem; }
+    .classes b { font-size: 1.3rem; }
+    .conf { display: grid; grid-template-columns: 60px 1fr 50px; gap: .4rem; align-items: center; font-family: monospace; }
+    #count { font-size: 3rem; text-align: center; margin: 0; font-family: Georgia, serif; }
+    #mom { position: absolute; top: 14px; left: 18px; background: rgba(255,255,255,.75); padding: .4rem .8rem; border-radius: 8px; font-family: Georgia, serif; }
+    #loss { width: 100%; height: 110px; background: #fff; border-radius: 6px; border: 1px solid rgba(43,38,34,.2); }
+  </style>
+</head>
+<body>
+  <h1>E5 · Teach it your hands, then add the spices pinch by pinch</h1>
+  <p class="question">
+    <strong>Question:</strong> can a neural network trained in the browser, on the visitor's own hands, tell <em>open</em>, <em>fist</em> and <em>pinch</em> apart well enough that one pinch drops exactly one spoon of spice?<br>
+    <strong>Pass:</strong> ≥ 90% correct per class in the 5-second test, and 3 deliberate pinches give exactly 3 spices (no doubles, no ghosts while holding the pinch).
+  </p>
+
+  <div class="layout">
+    <div class="left">
+      <div class="scene" id="scene">
+        <svg viewBox="0 0 640 360" aria-hidden="true">
+          <path d="M150,190 L170,330 Q320,355 470,330 L490,190 Z" fill="#3b3430" stroke="#2b2622" stroke-width="3"/>
+          <ellipse id="curry" cx="320" cy="190" rx="170" ry="30" fill="#e8c27a" stroke="#2b2622" stroke-width="3"/>
+          <g id="particles"></g>
+          <!-- Fingers above the pot (where the pinch is released) -->
+          <g id="fingers" transform="translate(320 60)">
+            <ellipse cx="-10" cy="0" rx="10" ry="18" fill="#e8b48f" stroke="#2b2622" stroke-width="2.5"/>
+            <ellipse cx="10" cy="4" rx="10" ry="18" fill="#e8b48f" stroke="#2b2622" stroke-width="2.5"/>
+          </g>
+        </svg>
+        <div id="mom">Mom shows: <span id="target">3</span> pinches</div>
+        <div class="badge" id="badge">Too much! Mom laughs…</div>
+      </div>
+      <p id="count">0 / 3</p>
+      <div class="row">
+        <button class="secondary" id="newTarget">Mom shows a new number</button>
+        <label class="row"><input type="checkbox" id="heuristic"> use the distance rule instead of the network (baseline)</label>
+      </div>
+      <div>
+        <h2>Live confidences</h2>
+        <div class="conf"><span>open</span><div class="bar"><i id="bOpen"></i></div><span id="cOpen">–</span></div>
+        <div class="conf"><span>fist</span><div class="bar"><i id="bFist"></i></div><span id="cFist">–</span></div>
+        <div class="conf"><span>pinch</span><div class="bar"><i id="bPinch"></i></div><span id="cPinch">–</span></div>
+      </div>
+      <canvas id="loss" width="1280" height="220"></canvas>
+      <small>Training loss per epoch. It should drop and flatten out; if it stays high, the classes look too much alike → record again.</small>
+    </div>
+
+    <div class="panel">
+      <button id="start">Turn on camera</button>
+      <p class="status" id="status">Camera is off. Mouse mode: press P (pinch) and release it, to test the counting.</p>
+      <div class="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay" width="640" height="480"></canvas></div>
+
+      <h2>1 · Show me how you hold your hands</h2>
+      <div class="classes">
+        <button class="secondary" data-label="open" disabled>✋ open<b id="nOpen">0</b></button>
+        <button class="secondary" data-label="fist" disabled>✊ fist<b id="nFist">0</b></button>
+        <button class="secondary" data-label="pinch" disabled>🤏 pinch<b id="nPinch">0</b></button>
+      </div>
+      <small>Each button: 3-2-1, then 2.5 s of recording. Move your hand a bit while recording (closer, further, tilted) so it learns the shape, not one position. At least 15 samples per class.</small>
+
+      <h2>2 · Train</h2>
+      <div class="settings">
+        <label>epochs <input type="range" id="tEpochs" min="10" max="120" step="5" value="40"> <span id="vEpochs">40</span></label>
+        <label>pinch confidence ≥ <input type="range" id="tPinch" min="0.5" max="0.99" step="0.01" value="0.75"> <span id="vPinch">0.75</span></label>
+        <label>results in a row <input type="range" id="tRow" min="1" max="8" step="1" value="3"> <span id="vRow">3</span></label>
+        <label>re-arm: other ≥ <input type="range" id="tArm" min="0.4" max="0.95" step="0.05" value="0.6"> <span id="vArm">0.6</span></label>
+        <label>distance rule: pinch &lt; (palms) <input type="range" id="tDist" min="0.1" max="0.8" step="0.02" value="0.32"> <span id="vDist">0.32</span></label>
+      </div>
+      <div class="row">
+        <button id="train" disabled>Train</button>
+        <button class="secondary" id="saveData">Save samples</button>
+        <label class="row secondary"><small>Load samples</small> <input type="file" id="loadData" accept=".json"></label>
+      </div>
+
+      <h2>3 · Test (5 s per class)</h2>
+      <div class="row">
+        <select id="testLabel"><option>open</option><option>fist</option><option>pinch</option></select>
+        <button class="secondary" id="test" disabled>Test this class</button>
+      </div>
+      <table id="matrix"></table>
+
+      <dl class="stats">
+        <dt>model</dt><dd id="sModel">not trained</dd>
+        <dt>pinch state</dt><dd id="sArm">armed</dd>
+        <dt>thumb–index</dt><dd id="sDist">–</dd>
+        <dt>classify every</dt><dd>70 ms</dd>
+        <dt>detection fps</dt><dd id="sFps">–</dd>
+      </dl>
+      <div class="row">
+        <button class="secondary" id="logRound">Log pinch round</button>
+        <button class="secondary" id="copy">Copy log</button>
+      </div>
+      <pre class="log" id="log">Test plan: record 3 classes → train → test each class 5 s (matrix) → pinch exactly 3 times → hold a pinch for 5 s (must stay 1) → open/close fist 10× (must stay 0). Then repeat with the distance rule to compare.</pre>
+    </div>
+  </div>
+
+  <script src="../../js/lib/gsap.min.js"></script>
+  <script src="../../js/lib/ml5.min.js"></script>
+  <script src="../shared/exp.js"></script>
+  <script>
+    const { $ } = Exp;
+    const settings = Exp.bindSliders(['Epochs', 'Pinch', 'Row', 'Arm', 'Dist'], {});
+    const log = Exp.makeLog($('log'));
+    const fps = Exp.fpsMeter();
+    const octx = $('overlay').getContext('2d');
+    const LABELS = ['open', 'fist', 'pinch'];
+
+    let handPose = null, hand = null;
+    let samples = [];                 // { label, features } — kept ourselves so they can be saved/loaded
+    let nn = null, trained = false;
+
+    // ---------- 1 · Collect ----------
+    let recording = null;             // label while recording
+    function counts() {
+      const c = { open: 0, fist: 0, pinch: 0 };
+      samples.forEach(s => c[s.label]++);
+      $('nOpen').textContent = c.open; $('nFist').textContent = c.fist; $('nPinch').textContent = c.pinch;
+      $('train').disabled = !LABELS.every(l => c[l] >= 15);
+      return c;
+    }
+    document.querySelectorAll('.classes button').forEach(btn => btn.addEventListener('click', async () => {
+      const label = btn.dataset.label;
+      document.querySelectorAll('.classes button').forEach(b => b.disabled = true);
+      for (const n of [3, 2, 1]) { $('status').textContent = `Show "${label}" in ${n}…`; await new Promise(r => setTimeout(r, 700)); }
+      $('status').textContent = `Recording "${label}"… move your hand a little`;
+      recording = label;
+      await new Promise(r => setTimeout(r, 2500));
+      recording = null;
+      const c = counts();
+      $('status').textContent = c[label] < 15 ? `Only ${c[label]} samples of "${label}" — was your hand in view? Record again.` : `Got ${c[label]} samples of "${label}".`;
+      document.querySelectorAll('.classes button').forEach(b => b.disabled = !handPose);
+    }));
+
+    // ---------- 2 · Train ----------
+    const lossHistory = [];
+    function drawLoss() {
+      const c = $('loss'), ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+      if (lossHistory.length < 2) return;
+      const max = Math.max(...lossHistory);
+      ctx.strokeStyle = '#c4623a'; ctx.lineWidth = 4; ctx.beginPath();
+      lossHistory.forEach((l, i) => {
+        const x = (i / (settings.Epochs - 1)) * c.width, y = c.height - 10 - (l / max) * (c.height - 20);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    }
+    async function train() {
+      $('train').disabled = true;
+      $('sModel').textContent = 'training…';
+      nn = ml5.neuralNetwork({ task: 'classification', debug: false });   // NOT a promise (unlike handPose)
+      for (const s of samples) nn.addData(s.features, [s.label]);
+      nn.normalizeData();
+      lossHistory.length = 0;
+      const t0 = performance.now();
+      await new Promise(resolve => nn.train(
+        { epochs: settings.Epochs, batchSize: 16 },
+        (epoch, logs) => { lossHistory.push(typeof logs === 'number' ? logs : logs?.loss ?? 0); drawLoss(); $('sModel').textContent = `training… epoch ${epoch + 1}/${settings.Epochs}`; },
+        resolve
+      ));
+      trained = true;
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      $('sModel').textContent = `trained · ${samples.length} samples · ${secs} s · final loss ${(lossHistory.at(-1) ?? 0).toFixed(3)}`;
+      $('test').disabled = false; $('train').disabled = false;
+      $('status').textContent = 'Trained. Pinch to add spice.';
+      log.line(`trained · ${JSON.stringify(counts())} · ${settings.Epochs} epochs · ${secs} s · loss ${(lossHistory.at(-1) ?? 0).toFixed(3)}`);
+    }
+    $('train').addEventListener('click', () => train().catch(err => { $('sModel').textContent = 'training failed'; $('status').textContent = err.message; console.error(err); $('train').disabled = false; }));
+
+    // Save / load the raw samples (so a good set can be reused during the consultation)
+    $('saveData').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(samples)], { type: 'application/json' }));
+      a.download = 'hand-shapes.json'; a.click();
+    });
+    $('loadData').addEventListener('change', async e => {
+      try { samples = JSON.parse(await e.target.files[0].text()); counts(); $('status').textContent = `Loaded ${samples.length} samples. Press Train.`; }
+      catch { $('status').textContent = 'That file is not a samples file.'; }
+    });
+
+    // ---------- Classification (every 70 ms) ----------
+    let conf = { open: 0, fist: 0, pinch: 0 };
+    let busy = false;
+    function classifyNow() {
+      if (!hand) { conf = { open: 0, fist: 0, pinch: 0 }; return; }
+      if ($('heuristic').checked || !trained) {
+        // Baseline: thumb tip ↔ index tip distance in palms
+        const d = Exp.pinchDistance(hand.keypoints);
+        const p = Exp.clamp(1 - (d - settings.Dist * 0.5) / settings.Dist);
+        const o = Exp.openness(hand.keypoints) > 1.25 ? 1 : 0;
+        conf = { pinch: p, open: (1 - p) * o, fist: (1 - p) * (1 - o) };
+        onConfidences();
+        return;
+      }
+      if (busy) return;
+      busy = true;
+      // ml5 1.x passes results first; handle (err, results) too just in case
+      nn.classify(Exp.handFeatures(hand.keypoints), (a, b) => {
+        busy = false;
+        const results = Array.isArray(a) ? a : b;
+        if (!results) return;
+        conf = { open: 0, fist: 0, pinch: 0 };
+        results.forEach(r => conf[r.label] = r.confidence);
+        onConfidences();
+      });
+    }
+    setInterval(classifyNow, 70);
+
+    // ---------- 3 · Test → confusion matrix ----------
+    const matrix = {}; LABELS.forEach(t => { matrix[t] = { open: 0, fist: 0, pinch: 0 }; });
+    let testing = null;
+    function drawMatrix() {
+      let html = '<tr><th>shown ↓ / predicted →</th>' + LABELS.map(l => `<th>${l}</th>`).join('') + '<th>correct</th></tr>';
+      for (const t of LABELS) {
+        const row = matrix[t], total = LABELS.reduce((s, l) => s + row[l], 0);
+        html += `<tr><th>${t}</th>` + LABELS.map(l => `<td>${row[l]}</td>`).join('') + `<td>${total ? Math.round(row[t] / total * 100) + '%' : '–'}</td></tr>`;
+      }
+      $('matrix').innerHTML = html;
+    }
+    $('test').addEventListener('click', async () => {
+      const label = $('testLabel').value;
+      matrix[label] = { open: 0, fist: 0, pinch: 0 };
+      $('test').disabled = true;
+      for (const n of [3, 2, 1]) { $('status').textContent = `Show "${label}" in ${n}…`; await new Promise(r => setTimeout(r, 700)); }
+      testing = label; $('status').textContent = `Testing "${label}" for 5 s…`;
+      await new Promise(r => setTimeout(r, 5000));
+      testing = null; $('test').disabled = false;
+      const row = matrix[label], total = LABELS.reduce((s, l) => s + row[l], 0);
+      log.line(`test "${label}" · ${total} results · ${LABELS.map(l => `${l} ${row[l]}`).join(' · ')} · ${total ? Math.round(row[label] / total * 100) : 0}% correct ${row[label] / total >= 0.9 ? 'PASS' : 'FAIL'}`);
+      drawMatrix();
+    });
+
+    // ---------- One pinch = one spice (debounce + re-arm) ----------
+    let armed = true, inARow = 0, added = 0, target = 3, falseAdds = 0;
+    function onConfidences() {
+      const top = LABELS.reduce((a, b) => conf[a] >= conf[b] ? a : b);
+      if (testing && hand) { matrix[testing][top]++; drawMatrix(); }
+      for (const l of LABELS) {
+        const key = l[0].toUpperCase() + l.slice(1);
+        $('b' + key).style.width = (conf[l] * 100) + '%';
+        $('c' + key).textContent = conf[l].toFixed(2);
+      }
+      if (armed) {
+        inARow = conf.pinch >= settings.Pinch ? inARow + 1 : 0;
+        if (inARow >= settings.Row) { armed = false; inARow = 0; addSpice(); }
+      } else if (top !== 'pinch' && conf[top] >= settings.Arm) {
+        armed = true;                 // fingers opened again: the next pinch may count
+      }
+      $('sArm').textContent = armed ? `armed (${inARow}/${settings.Row})` : 'waiting for you to let go';
+      gsap.to('#fingers > ellipse:first-child', { attr: { cx: -10 + conf.pinch * 8 }, duration: 0.1 });
+      gsap.to('#fingers > ellipse:last-child', { attr: { cx: 10 - conf.pinch * 8 }, duration: 0.1 });
+    }
+
+    function addSpice() {
+      added += 1;
+      $('count').textContent = `${added} / ${target}`;
+      // A little cloud of spice falls from the fingers into the pot
+      for (let i = 0; i < 18; i++) {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('r', 2 + Math.random() * 2.5); c.setAttribute('fill', gsap.utils.random(['#c4623a', '#d9a03a', '#8a3b1a']));
+        c.setAttribute('cx', 320); c.setAttribute('cy', 80);
+        $('particles').appendChild(c);
+        gsap.to(c, { attr: { cx: 320 + gsap.utils.random(-50, 50), cy: 190 + gsap.utils.random(-8, 8) }, duration: gsap.utils.random(.5, .8), ease: 'power2.in', onComplete: () => gsap.to(c, { opacity: 0, duration: .8, onComplete: () => c.remove() }) });
+      }
+      // Each pinch warms the colour of the curry a bit
+      gsap.to('#curry', { attr: { fill: gsap.utils.interpolate('#e8c27a', '#b5521f', Exp.clamp(added / 4)) }, duration: 0.8, delay: 0.5 });
+      if (added > target) $('badge').classList.add('show');
+      else if (added === target) $('status').textContent = 'That\'s it. The food tells you what it needs.';
+    }
+    function newTarget() {
+      target = 1 + Math.floor(Math.random() * 3); added = 0; falseAdds = 0;
+      $('target').textContent = target; $('count').textContent = `0 / ${target}`;
+      $('badge').classList.remove('show');
+      gsap.set('#curry', { attr: { fill: '#e8c27a' } });
+    }
+    $('newTarget').addEventListener('click', newTarget);
+    $('logRound').addEventListener('click', () => {
+      log.line(`pinch round · ${new Date().toLocaleTimeString()} · mom showed ${target} · added ${added} · ${$('heuristic').checked || !trained ? 'distance rule' : 'network'} · conf ≥ ${settings.Pinch} × ${settings.Row} · re-arm ≥ ${settings.Arm} · ${added === target ? 'PASS' : 'FAIL'}`);
+      newTarget();
+    });
+
+    // Mouse/keyboard mode: holding P = pinch, releasing = open
+    let keyPinch = false;
+    addEventListener('keydown', e => { if (e.key === 'p' && !handPose) { keyPinch = true; } });
+    addEventListener('keyup', e => { if (e.key === 'p' && !handPose) { keyPinch = false; } });
+    setInterval(() => { if (!handPose) { conf = keyPinch ? { pinch: .95, open: .03, fist: .02 } : { pinch: .02, open: .95, fist: .03 }; onConfidences(); } }, 70);
+
+    // ---------- Camera + HandPose ----------
+    $('start').addEventListener('click', async () => {
+      $('start').disabled = true;
+      try {
+        await Exp.startCamera($('video'), $('overlay'));
+        $('status').textContent = 'Loading HandPose…';
+        handPose = await Exp.withTimeout(ml5.handPose({ maxHands: 1, flipped: true, modelType: 'full' }), 45000);
+        handPose.detectStart($('video'), results => {
+          fps.tick();
+          hand = results[0] || null;
+          if (hand && recording) samples.push({ label: recording, features: Exp.handFeatures(hand.keypoints) });
+        });
+        document.querySelectorAll('.classes button').forEach(b => b.disabled = false);
+        $('status').textContent = 'Record each hand shape. Until you train, the distance rule is used.';
+      } catch (err) { $('start').disabled = false; handPose = null; $('status').textContent = Exp.cameraMessage(err); console.error(err); }
+    });
+
+    (function loop() {
+      octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
+      if (hand) { Exp.drawHand(octx, hand.keypoints, recording ? '#b8402a' : '#0088FF'); $('sDist').textContent = Exp.pinchDistance(hand.keypoints).toFixed(2) + ' palms'; }
+      $('sFps').textContent = handPose ? fps.value.toFixed(1) : '–';
+      requestAnimationFrame(loop);
+    })();
+    drawMatrix();
+  </script>
+</body>
+</html>
