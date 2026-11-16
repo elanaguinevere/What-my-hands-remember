@@ -354,6 +354,23 @@ Five kinds of mapping, each with its own range, curve and smoothing (editable li
 - state: hand in view → lid off; lid only goes back on after 0.8 s without a hand (no flicker)
 Pass (with the prototype test): testers can say what each movement does without being told; nothing jitters while the hand is still.
 
+### First run with the camera (16 Nov, 15:51) — default settings
+
+```
+mapping @ 15:51:52 (camera)
+  palm x (palms from centre) [-3..3] none smooth 0.12s → spoon left/right (direct)
+  palm y (palms from centre) [-2..2] none smooth 0.12s → spoon depth (direct)
+  hand speed (palms/s) [0.3..5] power2.out smooth 0.8s → steam (continuous)
+  distance stirred (palms) [0..120] sine.inOut smooth 0s → curry colour (accumulate)
+  thumb–index (palms) [0.25..0.6] none smooth 0s → a pinch of spice (event)
+  hand in view (0/1) [0..1] none smooth 0s → lid off / on (state)
+```
+
+Found while reviewing: E8 v1 divided the palm position by the *current* palm size — the same bug as E4 v1 (palm size wobbles when the hand tilts → spoon shakes, "distance stirred" grows by itself).
+v1.1 (16 Nov): divided by a slowly averaged palm size instead.
+
+To do: per mapping, note how it **felt** (does it feel like holding / stirring / pinching, or like a remote control?) and change one value at a time if not.
+
 | Mapping | Settings that felt right | Notes |
 |---------|--------------------------|-------|
 | direct |  |  |
@@ -365,6 +382,32 @@ Pass (with the prototype test): testers can say what each movement does without 
 ## experiment 9: technical limitations
 See `docs/TECHNICAL-LIMITATIONS.md` for the full list (34 items: detection + mitigation).
 Checked 14 Nov in headless Chrome: file:// banner + static story · no camera → camera button disabled · software GPU detected · small screen notice · GSAP blocked → static story · model download blocked → "could not be downloaded" → mouse mode.
+
+### Baseline snapshot (16 Nov, 15:53) — my MacBook, normal conditions
+
+```
+snapshot @ 15:53:04 · Chrome/155.0.0.0
+  [ok] Secure context: http://127.0.0.1:5500
+  [ok] Camera API: getUserMedia available
+  [ok] Camera present: 1 camera(s)
+  [ok] Camera permission: granted
+  [ok] GPU for the models: WebGPU · ANGLE (Apple, ANGLE Metal Renderer: Apple M2)
+  [ok] Processor / memory: 8 cores · 16 GB+ memory
+  [ok] Screen size: 1414 × 876
+  [ok] Reduced motion: no preference
+  [ok] gsap / ScrollTrigger: loaded
+  [ok] Loading: ml5 0.2 s · camera 1.4 s · HandPose 1.4 s
+  [ok] Camera: 640×480 · FaceTime HD Camera
+  [ok] TF.js backend: webgpu
+  [ok] Light: brightness 133/255
+  [ok] Hand: palm 100 px · confidence 0.99
+  [ok] Detection speed: 30.0 fps
+```
+
+Notes:
+- All green on the machine I develop on: WebGPU, model loads in 1.4 s (cached), light 133/255.
+- Port 5500 = VS Code Live Server: it reloads the page on every saved file in the project → in-page state (trained network in E5, calibration in E6) is lost. Matters for testing, not for the final site.
+- 30 fps here vs. up to 60 in E6 earlier: the FaceTime camera likely delivers 30 frames per second in dimmer light, so that's the camera's limit, not the model's.
 
 | Situation | What the page said | Mitigation worked? |
 |-----------|--------------------|--------------------|

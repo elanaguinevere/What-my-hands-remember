@@ -14,7 +14,7 @@
   </style>
 </head>
 <body>
-  <h1>E8 · Meaningful mapping</h1>
+  <h1>E8 · Meaningful mapping <small>(v1.1 · 16 Nov)</small></h1>
   <p class="question">
     <strong>Question:</strong> which kinds of mapping make a hand signal feel like a <em>cooking action</em> instead of a remote control? Every row below is one signal → one animation parameter, with its own input range, curve and smoothing.<br>
     <strong>Pass:</strong> 5 testers can say what each movement does without being told (E9 prototype test), and nothing jitters while the hand is still.
@@ -175,10 +175,14 @@
     }
 
     // Camera: palm centre in palms, relative to the image centre
-    let handPose = null, hand = null;
+    let handPose = null, hand = null, palmAvg = null;
     function fromHand(now) {
       if (!hand) return signals({ x: 0, y: 0, pinch: 1, present: false }, now);
-      const kp = hand.keypoints, palm = Exp.palmSize(kp), ids = [0, 5, 9, 13, 17];
+      // Slowly averaged palm size (same fix as E4 v2): the palm size wobbles when the hand tilts, and dividing
+      // by the current value made the spoon shake and the "distance stirred" grow on its own
+      const kp = hand.keypoints, ids = [0, 5, 9, 13, 17];
+      palmAvg = palmAvg === null ? Exp.palmSize(kp) : palmAvg + (Exp.palmSize(kp) - palmAvg) * 0.03;
+      const palm = palmAvg;
       const cx = ids.reduce((s, i) => s + kp[i].x, 0) / 5, cy = ids.reduce((s, i) => s + kp[i].y, 0) / 5;
       signals({ x: (cx - 320) / palm, y: (cy - 240) / palm, pinch: Exp.pinchDistance(kp), present: true }, now);
     }
