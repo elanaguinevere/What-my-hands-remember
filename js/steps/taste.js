@@ -57,8 +57,9 @@ export default {
     });
     ctx.every(() => {
       if (ctx.mode !== 'mouse') return;
-      taste.warmth += ((keys.h ? 1 : 0) - taste.warmth) * 0.15;
-      taste.spicy += ((keys.s ? 1 : 0) - taste.spicy) * 0.25;
+      // Held key = that face; ~0.5 s to full strength (v3 needs the face fully reached)
+      taste.warmth = keys.h ? Math.min(1, taste.warmth + 0.1) : Math.max(0, taste.warmth - 0.2);
+      taste.spicy = keys.s ? Math.min(1, taste.spicy + 0.1) : Math.max(0, taste.spicy - 0.2);
       handle(taste.decide());
     }, 50);
   }

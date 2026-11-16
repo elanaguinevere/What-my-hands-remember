@@ -39,7 +39,11 @@
         <div class="badge" id="badge">Too much! Mom laughs…</div>
       </div>
       <p id="count">0 / 3</p>
+      <p id="modeNote" class="status" style="text-align:center;font-family:monospace"></p>
+      <canvas class="graph" id="timeline" width="1280" height="220"></canvas>
+      <small>Last 10 s: pinch confidence (orange), threshold (dashed). Green dot = spice added, blue tick = re-armed (counter saw you let go), grey band = no hand.</small>
       <div class="row">
+        <button id="startRound">Start pinch round (3-2-1)</button> <span id="countdown" style="font-size:1.4rem;font-family:Georgia,serif"></span>
         <button class="secondary" id="newTarget">Mom shows a new number</button>
         <label class="row"><input type="checkbox" id="heuristic"> use the distance rule instead of the network (baseline)</label>
       </div>
@@ -72,10 +76,13 @@
         <label>pinch confidence ≥ <input type="range" id="tPinch" min="0.5" max="0.99" step="0.01" value="0.75"> <span id="vPinch">0.75</span></label>
         <label>results in a row <input type="range" id="tRow" min="1" max="8" step="1" value="3"> <span id="vRow">3</span></label>
         <label>re-arm: other ≥ <input type="range" id="tArm" min="0.4" max="0.95" step="0.05" value="0.6"> <span id="vArm">0.6</span></label>
+        <label>re-arm: results in a row <input type="range" id="tArmRow" min="1" max="8" step="1" value="3"> <span id="vArmRow">3</span></label>
+        <label>min. time between spices (s) <input type="range" id="tGap" min="0" max="1.5" step="0.1" value="0.5"> <span id="vGap">0.5</span></label>
         <label>distance rule: pinch &lt; (palms) <input type="range" id="tDist" min="0.1" max="0.8" step="0.02" value="0.32"> <span id="vDist">0.32</span></label>
       </div>
       <div class="row">
         <button id="train" disabled>Train</button>
+        <button class="secondary" id="restore" hidden>Restore last samples + train</button>
         <button class="secondary" id="saveData">Save samples</button>
         <label class="row secondary"><small>Load samples</small> <input type="file" id="loadData" accept=".json"></label>
       </div>
@@ -98,7 +105,7 @@
         <button class="secondary" id="logRound">Log pinch round</button>
         <button class="secondary" id="copy">Copy log</button>
       </div>
-      <pre class="log" id="log">Test plan: record 3 classes → train → test each class 5 s (matrix) → pinch exactly 3 times → hold a pinch for 5 s (must stay 1) → open/close fist 10× (must stay 0). Then repeat with the distance rule to compare.</pre>
+      <pre class="log" id="log">Test plan: record 3 classes → train → test each class 5 s (matrix) → "Start pinch round", pinch the number mom shows, Log → hold a pinch for 5 s (must stay 1) → open/close fist 10× (must stay 0). Then repeat with the distance rule to compare.</pre>
     </div>
   </div>
 
@@ -107,7 +114,7 @@
   <script src="../shared/exp.js"></script>
   <script>
     const { $ } = Exp;
-    const settings = Exp.bindSliders(['Epochs', 'Pinch', 'Row', 'Arm', 'Dist'], {});
+    const settings = Exp.bindSliders(['Epochs', 'Pinch', 'Row', 'Arm', 'ArmRow', 'Gap', 'Dist'], {});
     const log = Exp.makeLog($('log'));
     const fps = Exp.fpsMeter();
     const octx = $('overlay').getContext('2d');
@@ -156,6 +163,8 @@
     async function train() {
       $('train').disabled = true;
       $('sModel').textContent = 'training…';
+      // Without HandPose loaded first, TF.js hasn't picked a backend yet → wait for it (found 16 Nov)
+      if (ml5.tf?.ready) await ml5.tf.ready();
       nn = ml5.neuralNetwork({ task: 'classification', debug: false });   // NOT a promise (unlike handPose)
       for (const s of samples) nn.addData(s.features, [s.label]);
       nn.normalizeData();
@@ -171,6 +180,7 @@
       $('sModel').textContent = `trained · ${samples.length} samples · ${secs} s · final loss ${(lossHistory.at(-1) ?? 0).toFixed(3)}`;
       $('test').disabled = false; $('train').disabled = false;
       $('status').textContent = 'Trained. Pinch to add spice.';
+      try { localStorage.setItem('e5-samples', JSON.stringify(samples)); } catch { /* storage full or blocked */ }
       log.line(`trained · ${JSON.stringify(counts())} · ${settings.Epochs} epochs · ${secs} s · loss ${(lossHistory.at(-1) ?? 0).toFixed(3)}`);
     }
     $('train').addEventListener('click', () => train().catch(err => { $('sModel').textContent = 'training failed'; $('status').textContent = err.message; console.error(err); $('train').disabled = false; }));
@@ -190,7 +200,7 @@
     let conf = { open: 0, fist: 0, pinch: 0 };
     let busy = false;
     function classifyNow() {
-      if (!hand) { conf = { open: 0, fist: 0, pinch: 0 }; return; }
+      if (!hand) { conf = { open: 0, fist: 0, pinch: 0 }; if (handPose) { stats.lost++; timeline.push({ t: performance.now(), lost: true }); } return; }
       if ($('heuristic').checked || !trained) {
         // Baseline: thumb tip ↔ index tip distance in palms
         const d = Exp.pinchDistance(hand.keypoints);
@@ -239,8 +249,15 @@
     });
 
     // ---------- One pinch = one spice (debounce + re-arm) ----------
-    let armed = true, inARow = 0, added = 0, target = 3, falseAdds = 0;
+    // v2 (16 Nov): the first camera test gave 9 spices for 3 pinches. While a pinch is held, the network
+    // can flicker to fist/open for one result, and v1 took that single result as "you let go".
+    // Now re-arming also needs `ArmRow` results in a row, and two spices are at least `Gap` s apart.
+    let armed = true, inARow = 0, armStreak = 0, added = 0, target = 3, lastSpiceAt = -1e9;
+    let stats, timeline = [];
+    function resetStats() { stats = { results: 0, lost: 0, top: { open: 0, fist: 0, pinch: 0 }, maxPinch: 0, above: 0, rearms: 0, quick: 0, blockedByGap: 0, start: performance.now(), lastRearm: -1e9 }; }
+    resetStats();
     function onConfidences() {
+      const now = performance.now();
       const top = LABELS.reduce((a, b) => conf[a] >= conf[b] ? a : b);
       if (testing && hand) { matrix[testing][top]++; drawMatrix(); }
       for (const l of LABELS) {
@@ -248,15 +265,45 @@
         $('b' + key).style.width = (conf[l] * 100) + '%';
         $('c' + key).textContent = conf[l].toFixed(2);
       }
+      stats.results++; stats.top[top]++; stats.maxPinch = Math.max(stats.maxPinch, conf.pinch); if (conf.pinch >= settings.Pinch) stats.above++;
+      const point = { t: now, pinch: conf.pinch };
       if (armed) {
         inARow = conf.pinch >= settings.Pinch ? inARow + 1 : 0;
-        if (inARow >= settings.Row) { armed = false; inARow = 0; addSpice(); }
-      } else if (top !== 'pinch' && conf[top] >= settings.Arm) {
-        armed = true;                 // fingers opened again: the next pinch may count
+        if (inARow >= settings.Row) {
+          if (now - lastSpiceAt < settings.Gap * 1000) { stats.blockedByGap++; inARow = 0; }
+          else {
+            armed = false; inARow = 0; armStreak = 0; lastSpiceAt = now; point.spice = true;
+            if (now - stats.lastRearm < 600) stats.quick++;    // re-armed and pinched again within 0.6 s: probably a flicker
+            addSpice();
+          }
+        }
+      } else {
+        armStreak = top !== 'pinch' && conf[top] >= settings.Arm ? armStreak + 1 : 0;
+        if (armStreak >= settings.ArmRow) { armed = true; armStreak = 0; stats.rearms++; stats.lastRearm = now; point.rearm = true; }
       }
-      $('sArm').textContent = armed ? `armed (${inARow}/${settings.Row})` : 'waiting for you to let go';
+      timeline.push(point);
+      $('sArm').textContent = armed ? `armed (${inARow}/${settings.Row})` : `waiting for you to let go (${armStreak}/${settings.ArmRow})`;
       gsap.to('#fingers > ellipse:first-child', { attr: { cx: -10 + conf.pinch * 8 }, duration: 0.1 });
       gsap.to('#fingers > ellipse:last-child', { attr: { cx: 10 - conf.pinch * 8 }, duration: 0.1 });
+    }
+
+    function drawTimeline() {
+      const c = $('timeline'), ctx = c.getContext('2d'), W = c.width, H = c.height, now = performance.now(), span = 10000;
+      while (timeline.length && now - timeline[0].t > span) timeline.shift();
+      ctx.clearRect(0, 0, W, H);
+      const x = t => W - (now - t) / span * W, y = v => H - 16 - v * (H - 32);
+      ctx.fillStyle = 'rgba(43,38,34,.12)';
+      timeline.forEach(p => { if (p.lost) ctx.fillRect(x(p.t) - 3, 0, 6, H); });
+      ctx.setLineDash([8, 8]); ctx.strokeStyle = '#c4623a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, y(settings.Pinch)); ctx.lineTo(W, y(settings.Pinch)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = '#c4623a'; ctx.lineWidth = 4; ctx.beginPath();
+      let first = true;
+      timeline.forEach(p => { if (p.lost) { first = true; return; } first ? ctx.moveTo(x(p.t), y(p.pinch)) : ctx.lineTo(x(p.t), y(p.pinch)); first = false; });
+      ctx.stroke();
+      timeline.forEach(p => {
+        if (p.spice) { ctx.fillStyle = '#3f7d4e'; ctx.beginPath(); ctx.arc(x(p.t), y(p.pinch), 10, 0, Math.PI * 2); ctx.fill(); }
+        if (p.rearm) { ctx.fillStyle = '#0088FF'; ctx.fillRect(x(p.t) - 2, H - 14, 4, 14); }
+      });
     }
 
     function addSpice() {
@@ -276,14 +323,26 @@
       else if (added === target) $('status').textContent = 'That\'s it. The food tells you what it needs.';
     }
     function newTarget() {
-      target = 1 + Math.floor(Math.random() * 3); added = 0; falseAdds = 0;
+      target = 1 + Math.floor(Math.random() * 3); added = 0;
+      armed = true; inARow = 0; armStreak = 0; lastSpiceAt = -1e9; resetStats();
       $('target').textContent = target; $('count').textContent = `0 / ${target}`;
       $('badge').classList.remove('show');
       gsap.set('#curry', { attr: { fill: '#e8c27a' } });
     }
     $('newTarget').addEventListener('click', newTarget);
+    $('startRound').addEventListener('click', async () => {
+      $('startRound').disabled = true;
+      for (const n of [3, 2, 1]) { $('countdown').textContent = n; await new Promise(r => setTimeout(r, 700)); }
+      newTarget(); $('countdown').textContent = `go: ${target} pinch${target > 1 ? 'es' : ''}`; $('startRound').disabled = false;
+    });
     $('logRound').addEventListener('click', () => {
-      log.line(`pinch round · ${new Date().toLocaleTimeString()} · mom showed ${target} · added ${added} · ${$('heuristic').checked || !trained ? 'distance rule' : 'network'} · conf ≥ ${settings.Pinch} × ${settings.Row} · re-arm ≥ ${settings.Arm} · ${added === target ? 'PASS' : 'FAIL'}`);
+      const st = stats, pct = n => st.results ? Math.round(n / st.results * 100) + '%' : '–';
+      const lostPct = st.results + st.lost ? Math.round(st.lost / (st.results + st.lost) * 100) : 0;
+      log.line([
+        `v2 · pinch round · ${new Date().toLocaleTimeString()} · ${((performance.now() - st.start) / 1000).toFixed(0)} s · mom showed ${target} · added ${added} · ${$('heuristic').checked ? 'distance rule' : trained ? 'network' : 'distance rule (network NOT trained)'} · ${added === target ? 'PASS' : 'FAIL'}`,
+        `  settings: pinch ≥ ${settings.Pinch} × ${settings.Row} · re-arm ≥ ${settings.Arm} × ${settings.ArmRow} · gap ${settings.Gap} s`,
+        `  why: hand lost ${lostPct}% · top shape open ${pct(st.top.open)} / fist ${pct(st.top.fist)} / pinch ${pct(st.top.pinch)} · max pinch conf ${st.maxPinch.toFixed(2)} · pinch ≥ threshold ${pct(st.above)} · re-arms ${st.rearms} · quick re-pinch (< 0.6 s) ${st.quick} · blocked by gap ${st.blockedByGap}`
+      ].join('\n'));
       newTarget();
     });
 
@@ -314,9 +373,25 @@
       octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
       if (hand) { Exp.drawHand(octx, hand.keypoints, recording ? '#b8402a' : '#0088FF'); $('sDist').textContent = Exp.pinchDistance(hand.keypoints).toFixed(2) + ' palms'; }
       $('sFps').textContent = handPose ? fps.value.toFixed(1) : '–';
+      drawTimeline();
+      $('modeNote').textContent = $('heuristic').checked ? 'counting with: distance rule' : trained ? 'counting with: your trained network' : 'counting with: distance rule — the network is not trained yet (load samples + Train)';
       requestAnimationFrame(loop);
     })();
     drawMatrix();
+
+    // A page reload (or a live-reload server reacting to a saved file) throws the trained network away.
+    // The last trained samples are kept in this browser, so retraining is one click (≈ 4 s, no camera needed).
+    try {
+      const saved = JSON.parse(localStorage.getItem('e5-samples') || 'null');
+      if (Array.isArray(saved) && saved.length) {
+        $('restore').hidden = false;
+        $('restore').textContent = `Restore last ${saved.length} samples + train`;
+        $('restore').addEventListener('click', () => {
+          samples = saved; counts(); $('restore').hidden = true;
+          train().catch(err => { $('sModel').textContent = 'training failed'; $('status').textContent = err.message; console.error(err); });
+        });
+      }
+    } catch { /* storage blocked */ }
   </script>
 </body>
 </html>

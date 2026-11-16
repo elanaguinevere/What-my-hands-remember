@@ -11,9 +11,9 @@
   </style>
 </head>
 <body>
-  <h1>E6 · Taste it: smile, or "too spicy"</h1>
+  <h1>E6 · Taste it: smile, or "too spicy" <small>(v3.2 · 16 Nov)</small></h1>
   <p class="question">
-    <strong>Question:</strong> can FaceMesh tell a smile ("it's right") apart from a too-spicy face (mouth open + eyes scrunched), after a short neutral calibration?<br>
+    <strong>Question:</strong> can FaceMesh tell a smile ("it's right") apart from a too-spicy face, after a short neutral calibration? (v3: smile = wide mouth + corners up, spicy = eyes scrunched + brows down — the concept's "mouth open" rule didn't match a real reaction.)<br>
     <strong>Pass:</strong> 5/5 smiles → "right", 5/5 spicy faces → "too spicy", talking and a neutral face for 20 s → nothing, a big laugh → not "too spicy".
   </p>
 
@@ -37,7 +37,7 @@
       </div>
       <p id="verdict"></p>
       <canvas class="graph" id="graph" width="1280" height="300"></canvas>
-      <small>Orange = smile warmth, red = spicy score, dashed = thresholds. Bottom ticks: blue = mouth open, black = eyes scrunched.</small>
+      <small>Orange = smile warmth, red = spicy score, dashed = thresholds. Bottom ticks: blue = brows down enough, black = eyes scrunched enough.</small>
     </div>
 
     <div class="panel">
@@ -55,12 +55,14 @@
         <dt>detection fps</dt><dd id="sFps">–</dd>
       </dl>
       <div class="settings">
-        <label>smile: warmth &gt; <input type="range" id="tWarm" min="0.3" max="1" step="0.02" value="0.72"> <span id="vWarm">0.72</span></label>
+        <label>smile: mouth wider than +% <input type="range" id="tSWidth" min="5" max="60" step="1" value="15"> <span id="vSWidth">15</span></label>
+        <label>smile: corners up more than <input type="range" id="tSLift" min="0.5" max="6" step="0.1" value="1.5"> <span id="vSLift">1.5</span></label>
         <label>smile held (s) <input type="range" id="tWarmHold" min="0.2" max="3" step="0.1" value="1.2"> <span id="vWarmHold">1.2</span></label>
-        <label>mouth open: + (of face height) <input type="range" id="tOpen" min="0.02" max="0.2" step="0.005" value="0.06"> <span id="vOpen">0.06</span></label>
-        <label>eyes scrunched: −% <input type="range" id="tSquint" min="0.05" max="0.6" step="0.01" value="0.22"> <span id="vSquint">0.22</span></label>
+        <label>spicy: eyes scrunched more than % <input type="range" id="tSEyes" min="5" max="60" step="1" value="22"> <span id="vSEyes">22</span></label>
+        <label>spicy: brows down more than % <input type="range" id="tSBrow" min="1" max="15" step="0.5" value="4"> <span id="vSBrow">4</span></label>
         <label>spicy held (s) <input type="range" id="tSpicyHold" min="0.2" max="2" step="0.1" value="0.6"> <span id="vSpicyHold">0.6</span></label>
-        <label class="row"><input type="checkbox" id="notSmiling" checked> not "spicy" while smiling (a laugh also opens the mouth and scrunches the eyes)</label>
+        <label class="row"><input type="checkbox" id="notSmiling" checked> not "spicy" while smiling (eyes also scrunch in a smile)</label>
+        <small>v3 rule, from the 16 Nov profiles: smile = wide mouth + corners up · too spicy = eyes scrunched + brows pulled down (mouth stays flat). All measured against your neutral face; corners in % of face height.</small>
       </div>
       <label class="row">Which test is this round?
         <select id="roundType">
@@ -75,6 +77,7 @@
       <div class="row">
         <button class="secondary" id="logRound">Log this round</button>
         <button class="secondary" id="copy">Copy log</button>
+        <button class="secondary" id="saveRec" title="Downloads every frame of the last logged round (changes compared with the neutral face)">Save recording</button>
       </div>
       <pre class="log" id="log">Test plan: neutral 2 s (calibration) → 5 smiles → 5 spicy faces → talk for 20 s → one big laugh → repeat with glasses / dim light. Log each round.</pre>
     </div>
@@ -87,7 +90,8 @@
   <script>
     gsap.registerPlugin(MotionPathPlugin);
     const { $, clamp, median } = Exp;
-    const settings = Exp.bindSliders(['Warm', 'WarmHold', 'Open', 'Squint', 'SpicyHold'], {});
+    const settings = Exp.bindSliders(['SWidth', 'SLift', 'WarmHold', 'SEyes', 'SBrow', 'SpicyHold'], {});
+    settings.Warm = 0.99;   // v3: smile = both smile features fully reached
     const log = Exp.makeLog($('log'));
     const fps = Exp.fpsMeter();
     const octx = $('overlay').getContext('2d');
@@ -104,16 +108,37 @@
       return {
         ratio: mouthW / faceW + 0.8 * cornerLift,   // smile score from the previous version
         open: d(k[13], k[14]) / faceH,              // gap between the inner lips
-        eye                                         // eye height ÷ eye width
+        eye,                                        // eye height ÷ eye width
+        // v2.1: measured separately, to find what tells a smile from a grimace
+        width: mouthW / faceW,                      // mouth width
+        lift: cornerLift,                           // mouth corners above (+) / below (−) the middle of the lips
+        brow: (d(k[105], k[159]) + d(k[334], k[386])) / 2 / faceH   // eyebrow → upper eyelid (smaller = brows pulled down)
       };
     }
 
     // ---------- Calibration: median of 40 neutral frames ----------
-    let cal = null, calFrames = [];
+    let cal = null, calFrames = [], calibratedAt = 0;
+    // v3.2: a calibration goes stale (16 Nov: 4 h old → brows read ~5% too high, spicy 1/5). Show its age, warn after 5 min.
+    const calAge = () => cal ? (performance.now() - calibratedAt) / 1000 : 0;
+    setInterval(() => {
+      if (!cal || !faceMesh) return;
+      const a = calAge();
+      $('recal').textContent = a > 300 ? `Calibrate again (neutral face) — ${Math.round(a / 60)} min old!` : 'Calibrate again (neutral face)';
+      $('recal').style.background = a > 300 ? 'var(--bad)' : '';
+      $('recal').style.color = a > 300 ? '#fff' : '';
+    }, 1000);
     function startCalibration() { cal = null; calFrames = []; $('status').textContent = 'Keep a neutral face for a moment…'; }
 
     // ---------- Scores + events ----------
     let warmth = 0, spicy = 0, warmSince = null, spicySince = null, cooldownUntil = 0;
+    // v2 (16 Nov): after "right" or "too spicy" the face must return to neutral before the next one counts
+    // (v1 counted a long smile again every 3 s: 7 "right" for 5 smiles).
+    let rearmed = true;
+    // "why" diagnostics per round (v2): spicy never fired in the first camera test
+    let st;
+    function resetStats() { rec = []; st = { profile: [], frames: 0, maxOpen: 0, maxSquint: 0, openOk: 0, squintOk: 0, bothOk: 0, damped: 0, maxRaw: 0, maxWarm: 0 }; }
+    let rec = [];
+    resetStats();
     const counts = { right: 0, spicy: 0 };
     const history = [];
     const glowTo = gsap.quickTo('#glow', 'opacity', { duration: 0.3 });
@@ -122,34 +147,55 @@
         calFrames.push(m);
         $('sCal').textContent = `${calFrames.length}/40`;
         if (calFrames.length >= 40) {
-          cal = { ratio: median(calFrames.map(f => f.ratio)), open: median(calFrames.map(f => f.open)), eye: median(calFrames.map(f => f.eye)) };
+          cal = {}; for (const key of ['ratio', 'open', 'eye', 'width', 'lift', 'brow']) cal[key] = median(calFrames.map(f => f[key]));
+          calibratedAt = performance.now();
           $('sCal').textContent = `ratio ${cal.ratio.toFixed(3)} · open ${cal.open.toFixed(3)} · eye ${cal.eye.toFixed(3)}`;
           $('status').textContent = 'Calibrated. Taste the curry: smile if it\'s good, pull a face if it\'s too spicy.';
         }
         return;
       }
-      warmth = clamp((m.ratio / cal.ratio - 1.04) / 0.14);
-      const openAmt = clamp((m.open - cal.open) / settings.Open);           // 1 = opened enough
-      const squintAmt = clamp((1 - m.eye / cal.eye) / settings.Squint);     // 1 = scrunched enough
-      spicy = Math.min(openAmt, squintAmt);                                  // both are needed
+      // Change compared with the neutral face, in %
+      const delta = {
+        width: (m.width / cal.width - 1) * 100,
+        lift: (m.lift - cal.lift) * 100,            // in % of the face height
+        brow: (m.brow / cal.brow - 1) * 100,         // negative = brows pulled down
+        open: (m.open - cal.open) * 100,             // in % of the face height
+        eyes: (1 - m.eye / cal.eye) * 100            // positive = scrunched
+      };
+      // v3 rule (16 Nov profiles): smile = wide mouth AND corners up; too spicy = eyes scrunched AND brows down
+      const widthAmt = clamp(delta.width / settings.SWidth), liftAmt = clamp(delta.lift / settings.SLift);
+      const eyesAmt = clamp(delta.eyes / settings.SEyes), browAmt = clamp(-delta.brow / settings.SBrow);
+      warmth = Math.min(widthAmt, liftAmt);
+      spicy = Math.min(eyesAmt, browAmt);
+      const raw = spicy;
       if ($('notSmiling').checked && warmth > 0.5) spicy *= 0.3;
-      $('sRatio').textContent = m.ratio.toFixed(3);
-      $('sOpen').textContent = `${m.open.toFixed(3)} (${Math.round(openAmt * 100)}%)`;
-      $('sEye').textContent = `${m.eye.toFixed(3)} (${Math.round(squintAmt * 100)}% scrunched)`;
-      score(now, openAmt, squintAmt);
+      st.frames++;
+      st.maxW = Math.max(st.maxW || 0, widthAmt); st.maxL = Math.max(st.maxL || 0, liftAmt); st.maxE = Math.max(st.maxE || 0, eyesAmt); st.maxB = Math.max(st.maxB || 0, browAmt);
+      if (warmth > 0.99) st.smileOk = (st.smileOk || 0) + 1;
+      if (eyesAmt > 0.99) st.squintOk++; if (browAmt > 0.99) st.browOk = (st.browOk || 0) + 1;
+      if (raw > 0.99) st.bothOk++; if (raw > 0.99 && spicy <= 0.99) st.damped++;
+      st.maxWarm = Math.max(st.maxWarm, warmth);
+      if (eyesAmt > 0.5 || widthAmt > 0.5 || browAmt > 0.5 || delta.open > 3) st.profile.push(delta);
+      rec.push({ t: Math.round(now), ...Object.fromEntries(Object.entries(delta).map(([k, v]) => [k, +v.toFixed(2)])), warmth: +warmth.toFixed(2), spicy: +spicy.toFixed(2) });
+      $('sRatio').textContent = `width ${delta.width.toFixed(0)}% · corners ${delta.lift.toFixed(1)}`;
+      $('sOpen').textContent = `${delta.open.toFixed(1)} · brows ${delta.brow.toFixed(1)}% (${Math.round(browAmt * 100)}% of needed)`;
+      $('sEye').textContent = `${delta.eyes.toFixed(0)}% scrunched (${Math.round(eyesAmt * 100)}% of needed)`;
+      score(now, browAmt, eyesAmt);
     }
 
     function score(now, openAmt = 0, squintAmt = 0) {
       $('sWarm').textContent = warmth.toFixed(2);
       $('sSpicy').textContent = spicy.toFixed(2);
-      history.push({ t: now, warmth, spicy, open: openAmt > 0.99, squint: squintAmt > 0.99 });
+      history.push({ t: now, warmth, spicy, open: openAmt > 0.99, squint: squintAmt > 0.99 });   // (open = brows down enough since v3)
       // Mapping: warmth → warm glow + lighter curry (continuous)
       glowTo(warmth * 0.35);
-      if (now < cooldownUntil) return;
-      warmSince = warmth > settings.Warm ? warmSince ?? now : null;
-      spicySince = spicy > 0.99 ? spicySince ?? now : null;
-      if (spicySince !== null && now - spicySince > settings.SpicyHold * 1000) { tooSpicy(); cooldownUntil = now + 3000; spicySince = null; }
-      else if (warmSince !== null && now - warmSince > settings.WarmHold * 1000) { itsRight(); cooldownUntil = now + 3000; warmSince = null; }
+      if (!rearmed && warmth < 0.5 && spicy < 0.3) rearmed = true;   // v2.1: 0.3 was too strict (3 for 5 smiles)
+      if (now < cooldownUntil || !rearmed) return;
+      // v3.1: start at full strength, keep going while above 0.7 (a smile flickers around the threshold)
+      warmSince = warmSince !== null ? (warmth > 0.7 ? warmSince : null) : (warmth > settings.Warm ? now : null);
+      spicySince = spicySince !== null ? (spicy > 0.7 ? spicySince : null) : (spicy > 0.99 ? now : null);
+      if (spicySince !== null && now - spicySince > settings.SpicyHold * 1000) { tooSpicy(); cooldownUntil = now + 3000; spicySince = null; rearmed = false; }
+      else if (warmSince !== null && now - warmSince > settings.WarmHold * 1000) { itsRight(); cooldownUntil = now + 3000; warmSince = null; rearmed = false; }
     }
 
     // Mapping: discrete event → MotionPath yogurt arc into the pot
@@ -206,8 +252,9 @@
     (function loop() {
       const now = performance.now();
       if (!faceMesh) {
-        warmth += ((keys.h ? 1 : 0) - warmth) * 0.08;
-        spicy += ((keys.s ? 1 : 0) - spicy) * 0.15;
+        // Held key = that face; ~0.5 s to full strength (v3 needs the face fully reached)
+        warmth = keys.h ? Math.min(1, warmth + 0.035) : Math.max(0, warmth - 0.07);
+        spicy = keys.s ? Math.min(1, spicy + 0.035) : Math.max(0, spicy - 0.07);
         score(now);
       }
       octx.clearRect(0, 0, $('overlay').width, $('overlay').height);
@@ -236,19 +283,45 @@
     });
     $('recal').addEventListener('click', startCalibration);
     $('copy').addEventListener('click', () => log.copy());
+    $('saveRec').addEventListener('click', () => {
+      const data = lastRec || { test: $('roundType').value, frames: rec };
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ calibration: cal, ...data })], { type: 'application/json' }));
+      a.download = `e6-${data.test}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.json`;
+      a.click();
+    });
 
     let roundStart = performance.now();
+    const pct = v => Math.round(v * 100) + '%';
+    // Median and strongest change per feature, over the frames where the face moved
+    function profileLine() {
+      const P = st.profile;
+      if (!P.length) return '  profile: no expression frames';
+      const q = (key, f) => { const a = P.map(p => p[key]).sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * f))]; };
+      const sgn = v => (v >= 0 ? '+' : '') + v.toFixed(1);
+      return `  profile (${P.length} expression frames, median / strongest): width ${sgn(q('width', .5))}% / ${sgn(q('width', .9))}%` +
+             ` · corner lift ${sgn(q('lift', .5))} / ${sgn(q('lift', .9))}` +
+             ` · brows ${sgn(q('brow', .5))}% / ${sgn(q('brow', .1))}%` +
+             ` · mouth open ${sgn(q('open', .5))} / ${sgn(q('open', .9))}` +
+             ` · eyes scrunched ${sgn(q('eyes', .5))}% / ${sgn(q('eyes', .9))}%`;
+    }
+    let lastRec = null;
+    const fr = n => st.frames ? `${n} (${Math.round(n / st.frames * 100)}%)` : '–';
     $('logRound').addEventListener('click', () => {
       const type = $('roundType').value;
       const rule = { smile: [counts.right >= 5 && counts.spicy === 0, '5 right, 0 spicy'], spicy: [counts.spicy >= 5 && counts.right === 0, '5 spicy, 0 right'],
                      neutral: [counts.spicy === 0 && counts.right === 0, 'nothing'], laugh: [counts.spicy === 0, '0 spicy'], glasses: [null, ''], tuning: [null, ''] }[type];
       log.line([
-        `${$('roundType').selectedOptions[0].text} · ${new Date().toLocaleTimeString()} · ${((performance.now() - roundStart) / 1000).toFixed(0)} s · ${faceMesh ? 'camera' : 'keyboard'}`,
+        `v3.2 · ${$('roundType').selectedOptions[0].text} · ${new Date().toLocaleTimeString()} · ${((performance.now() - roundStart) / 1000).toFixed(0)} s · ${faceMesh ? 'camera' : 'keyboard'} · calibrated ${Math.round(calAge())} s ago${calAge() > 300 ? ' (STALE)' : ''}`,
         `  right ${counts.right} · spicy ${counts.spicy} · fps ${fps.value.toFixed(1)}`,
-        `  settings: warmth > ${settings.Warm} for ${settings.WarmHold} s · open +${settings.Open} · squint −${settings.Squint} · held ${settings.SpicyHold} s · not while smiling ${$('notSmiling').checked}`,
+        `  settings: smile = width > +${settings.SWidth}% & corners > +${settings.SLift} for ${settings.WarmHold} s · spicy = eyes > ${settings.SEyes}% & brows < −${settings.SBrow}% for ${settings.SpicyHold} s · not while smiling ${$('notSmiling').checked}`,
+        `  why: max reached (of needed): smile width ${pct(st.maxW || 0)} · smile corners ${pct(st.maxL || 0)} · spicy eyes ${pct(st.maxE || 0)} · spicy brows ${pct(st.maxB || 0)}`,
+        `       frames: smile ${fr(st.smileOk || 0)} · eyes enough ${fr(st.squintOk)} · brows enough ${fr(st.browOk || 0)} · spicy (both) ${fr(st.bothOk)} · spicy blocked as a smile ${fr(st.damped)}`,
+        profileLine(),
         `  ${rule[0] === null ? 'no verdict' : (rule[0] ? 'PASS' : 'FAIL') + ` (expected ${rule[1]})`}`
       ].join('\n'));
-      counts.right = 0; counts.spicy = 0; roundStart = performance.now(); $('verdict').textContent = '';
+      lastRec = { test: type, frames: rec };
+      counts.right = 0; counts.spicy = 0; roundStart = performance.now(); $('verdict').textContent = ''; resetStats(); rearmed = true;
     });
   </script>
 </body>

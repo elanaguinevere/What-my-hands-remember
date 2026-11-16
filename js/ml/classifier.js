@@ -29,6 +29,7 @@ class HandShapeClassifier {
   async train({ epochs = 40, batchSize = 16, onEpoch } = {}) {
     if (!machines.classifier.send('TRAIN')) throw new Error(`need at least ${MIN_SAMPLES} samples of each shape`);
     try {
+      if (ml5.tf?.ready) await ml5.tf.ready();   // TF.js backend must be initialised (E5, 16 Nov)
       this.nn = ml5.neuralNetwork({ task: 'classification', debug: false });   // not a promise
       for (const s of this.samples) this.nn.addData(s.features, [s.label]);
       this.nn.normalizeData();
