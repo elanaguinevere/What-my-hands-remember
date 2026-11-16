@@ -29,21 +29,96 @@ To do: redo all four tests with the new version.
 ## experiment 3: how can I make the scroll transitions fun?
 
 ## experiment 4: can I turn circles into grinding and stirring?
-Approach: palm centre (wrist + 4 finger bases, in palms) over the last 1.5 s → centre = mean, radius = mean distance, roundness = CV of the distances. While CV ≤ 0.45 and radius ≥ 0.35 palms, the change in angle around the centre is added up → turns + turns/second. Fist vs open hand by "openness" (fingertips → wrist in palms, < 1.25 = fist).
+Approach (v1): palm centre (wrist + 4 finger bases, in palms) over the last 1.5 s → centre = mean, radius = mean distance, roundness = CV of the distances. While CV ≤ 0.45 and radius ≥ 0.35 palms, the change in angle around the centre is added up → turns + turns/second. Fist vs open hand by "openness" (fingertips → wrist in palms, < 1.25 = fist).
 Mapping: grind = turns → seeds crack one by one (accumulate); stir = turns → curry darker (accumulate), speed → steam (continuous), > 1.5 turns/s → "slowly" (state).
 Pass: 5 slow circles = 5 ± 0.5 turns · still / chop / wave / wrong shape < 0.5 turns.
-Mouse check (14 Nov): 5 drawn circles → 4.44 turns (the first ~8 points are needed to find the centre, so ~0.5 turn is lost at the start). Fine for "6 turns to finish", but keep in mind when tuning.
+Mouse check (14 Nov): 5 drawn circles → 4.44 turns.
 
-| Time | Mode | Test | Turns | Peak speed | Verdict |
-|------|------|------|-------|------------|---------|
-|      | grind | five slow circles |  |  |  |
-|      | grind | hand still |  |  |  |
-|      | grind | chop up and down |  |  |  |
-|      | grind | wave side to side |  |  |  |
-|      | grind | wrong shape (open) |  |  |  |
-|      | stir | five slow circles |  |  |  |
-|      | stir | wrong shape (fist) |  |  |  |
-|      | stir | as fast as I can |  |  |  |
+### v1 results with the camera (16 Nov)
+| Time     | Mode  | Test              | Duration | Turns | Peak speed   | fps  | Verdict |
+|----------|-------|-------------------|----------|-------|--------------|------|---------|
+| 09:05:55 | grind | five slow circles | 99 s     | 16.05 | 2.23 turns/s | 47.4 | FAIL    |
+| 09:08:30 | stir  | five slow circles | 34 s     | 16.58 | 0.87 turns/s | 44.6 | FAIL    |
+
+Finding: ~3× too many turns, in both modes. Stir: 16.6 turns in 34 s = a steady 0.5 turns/s for the whole round, so it isn't only extra movement before the circles.
+Simulated (node, 47 fps) to find out why:
+- v1 divided the absolute palm position (pixels) by the *current* palm size. While circling, the hand tilts, so the palm size changes with the circle → the path gets distorted and loops. Simulated with the palm size following the circle: 5 circles → 1.1 to 3.8 turns depending on the pattern. Real data wobbles differently, but this is clearly wrong.
+- v1 used the mean of the last 1.5 s as the centre. That only works when the window holds a whole circle: 4 s per turn → 2.9 turns, 6 s per turn → 0 turns. And mom asks for *slow* stirring.
+- v1 lost ~0.5 turn at the start of every circle while finding the centre.
+- The rounds also included everything since the camera started (no reset), so the 99 s round counts more than the 5 circles.
+
+### v2 (16 Nov): `js/gestures/circle.js`, now shared by E4 and the app
+- angles in plain pixels (an angle doesn't depend on distance to the camera); palm size (median over the window) only for the radius check
+- least-squares circle fit over 2.5 s instead of the mean → part of a circle is enough
+- not a line: flatness (short ÷ long axis of the path) ≥ 0.25; roundness CV ≤ 0.3
+- lock on after 10 round frames in a row, let go after 10 non-round ones (hysteresis); on lock-on the arc already in the window is counted once
+- E4 page: "Start round" with 3-2-1 (resets), round timer, auto-reset when the camera starts, a dot flashes on the path for every whole turn, "Save recording" + "Replay" (frames as JSON, to replay a strange round with other settings)
+
+Simulation, 300 runs (10 cases × 3 palm-size patterns × 10 random runs), all PASS:
+5 circles at 1.5 / 3 / 4 / 6 s per turn, small circles (30 px), circles at the edge of the image → 5 ± 0.5 · hand still, chop, wave → < 0.5 · 10 fast circles → 9–11.
+Known: a figure 8 still gives ~0.6–1 turn (not in the test plan, not a cooking gesture).
+Mouse check: 5 circles of 3 s → 4.91 turns (grind and stir), wave → 0.00.
+
+To do: redo the camera rounds with v2 (press "Start round" first) and fill the table below. If a round is off, save its recording.
+
+| Time     | Mode  | Test                     | Turns | Peak speed | Verdict |
+|----------|-------|--------------------------|-------|------------|---------|
+| 09:18:44 | grind | five slow circles (14 s) | 7.14  | 0.98       | FAIL    |
+| 09:19:08 | grind | hand still               | 0.00  | 0.00       | PASS    |
+| 09:19:32 | grind | chop up and down         | 0.00  | 0.00       | PASS    |
+| 09:19:56 | grind | wave side to side        | 0.00  | 0.00       | PASS    |
+| 09:20:16 | grind | wrong shape (open)       | 0.00  | 0.00       | PASS    |
+| 09:20:36 | grind | as fast as I can         | 0.00  | 0.00       | FAIL    |
+
+Finding (v2, 16 Nov): the "nothing should count" tests all pass now. Two problems left: 5 slow circles → 7.14 (still ~1.4× too many) and fast circles → nothing at all. fps dropped to 29–42 in some rounds (49.8 in the first).
+Next: the log now has a "why" line per round (hand lost %, right shape %, round %, counting %, median radius / CV / flatness). Redo both failing rounds and save their recordings, so they can be replayed with other settings.
+
+Second v2 run (16 Nov, with the "why" line):
+
+| Time     | Mode  | Test              | Turns | Peak | fps  | Hand lost | Counting | Verdict     |
+|----------|-------|-------------------|-------|------|------|-----------|----------|-------------|
+| 09:23:20 | grind | five slow circles | 5.79  | 0.68 | 24.4 | 16%       | 67%      | FAIL (just) |
+| 09:23:43 | stir  | five slow circles | 5.34  | 0.67 | 28.7 | 15%       | 74%      | PASS        |
+| 09:24:02 | stir  | hand still        | 0.00  | 0.00 | 26.6 | 11%       | 0%       | PASS        |
+| 09:24:21 | stir  | chop up and down  | 0.34  | 0.02 | 33.5 | 26%       | 1%       | PASS        |
+| 09:24:39 | stir  | wave side to side | 0.00  | 0.00 | 35.1 | 12%       | 0%       | PASS        |
+| 09:25:02 | stir  | wrong hand shape  | 0.00  | 0.00 | 28.7 | 31%       | 7%       | PASS        |
+| 09:25:24 | stir  | as fast as I can  | 0.66  | 0.05 | 33.1 | 38%       | 1%       | FAIL        |
+
+Finding: slow circles are about right now (5.3–5.8 for 5). The extra is probably the hand already moving in an arc before the first circle, which gets counted when the tracker locks on. For the app that's fine ("about 6 turns until it smells").
+Fast circles fail because HandPose loses the hand in 38% of the frames (motion blur), and v2 threw the whole path away at every missed frame, so it never got going (round 17%, counting 1%).
+Also: fps was lower than earlier that morning (24–35 instead of 45–50), and the hand was lost in 11–16% of frames even when still or slow → check the light (E9) and close other tabs before testing.
+
+### v2.1 (16 Nov): bridge short gaps
+- A frame without a hand no longer resets the tracker; only a gap > 0.3 s does.
+- After a gap, the allowed angle jump grows with the time that passed (max 2.6 rad, below π so the direction can't flip).
+
+Simulated with the fps and loss rates from the logs above (30 runs per case):
+
+| Case                                        | Result                                        |
+|---------------------------------------------|-----------------------------------------------|
+| 5 slow circles (3 s, 25 fps, 16% lost)      | 30/30 PASS                                    |
+| 5 circles of 6 s (25 fps, 16% lost)         | 30/30 PASS                                    |
+| still / chop / wave (11–26% lost)           | 30/30 at 0 turns                              |
+| fast, 0.5 s per turn (33 fps, 38% lost)     | "too fast" 30/30, ~18 of 20 turns counted     |
+
+Very fast circles still undercount, but there the "too fast" badge is what matters.
+
+v2.1 with the camera (16 Nov):
+
+| Time     | Mode  | Test              | Turns | Peak | fps  | Hand lost | Counting | Verdict                 |
+|----------|-------|-------------------|-------|------|------|-----------|----------|-------------------------|
+| 09:32:15 | grind | five slow circles | 5.15  | 0.59 | 26.7 | 12%       | 63%      | PASS                    |
+| 09:32:35 | grind | as fast as I can  | 17.25 | 2.85 | 34.7 | 51%       | 84%      | PASS ("too fast" shown) |
+| 09:32:57 | stir  | five slow circles | 5.60  | 0.80 | 48.0 | 15%       | 88%      | FAIL (just, +0.1)       |
+| 09:33:15 | stir  | as fast as I can  | 21.20 | 2.83 | 42.3 | 40%       | 88%      | PASS ("too fast" shown) |
+
+Finding: bridging short gaps fixed fast circles. Even with half the frames lost (51%), the tracker keeps counting (84–88% of the time) and the "too fast" badge shows (peak ~2.8 turns/s).
+Slow circles: 5.15 and 5.60 for 5 real circles. Across all v2/v2.1 rounds the count is 0.15–0.8 turn too high, never too low → most likely the arc the hand already makes before the first circle, counted at lock-on.
+
+Decision: E4 concluded. The count is accurate enough for the experience: grinding and stirring are about "keep going until it smells / thickens" (goal 6 turns), not exact numbers, so +0.5 turn doesn't change what the visitor sees. Still / chop / wave / wrong shape never count.
+Possible later tweak (only if the prototype test shows it's needed): count at most the last ~1 s of the arc at lock-on.
+Settings kept: radius ≥ 0.35 palms · CV ≤ 0.3 · flatness ≥ 0.25 · fist < 1.25 · lock-on 10 frames · max gap 0.3 s · too fast > 1.5 turns/s.
 
 ## experiment 5: can the visitor teach it their own hands, and can one pinch be one spice?
 Approach: ml5.neuralNetwork (classification), 42 inputs (keypoints relative to the wrist ÷ palm size), classes open / fist / pinch, ≥ 15 samples each (2.5 s after 3-2-1), normalizeData, 40 epochs, batch 16. Classify every 70 ms. Pinch counts when pinch ≥ 0.75 for 3 results in a row; the next pinch only counts after another shape ≥ 0.6 (re-arm). Baseline to compare: thumb–index distance < 0.32 palms (no training).

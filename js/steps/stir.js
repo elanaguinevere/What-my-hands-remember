@@ -45,7 +45,7 @@ export default {
     ctx.listen(ctx.$('.scene'), 'mousemove', e => {
       if (ctx.mode !== 'mouse') return;
       const r = ctx.$('.scene').getBoundingClientRect();   // not e.offsetX (unreliable on SVG children)
-      tracker.add((e.clientX - r.left) / 40, (e.clientY - r.top) / 40);
+      tracker.add(e.clientX - r.left, e.clientY - r.top, performance.now(), true, 40);   // 40 px = 1 palm
       render();
     });
     ctx.cleanup(() => ctx.el.classList.remove('too-fast'));
