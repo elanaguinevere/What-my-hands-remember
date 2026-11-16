@@ -1,4 +1,4 @@
-// One pinch = one spice (from experiments/e5-pinch-classifier, v2 — 16 Nov).
+// One pinch = one spice (from experiments/1-ml5/e5-pinch-classifier, v2 — 16 Nov).
 // Fires when pinch confidence ≥ minConf for `inARow` results. Then it waits until another shape is
 // clearly shown (≥ rearm) for `rearmRow` results in a row before the next pinch can count, and two
 // spices are at least `minGap` ms apart.

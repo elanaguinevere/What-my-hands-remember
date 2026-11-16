@@ -1,4 +1,4 @@
-// Circular motion tracker (from experiments/e4-circles, v2 — 16 Nov).
+// Circular motion tracker (from experiments/1-ml5/e4-circles, v2 — 16 Nov).
 //
 // v1 used the mean of the last 1.5 s as the centre. That only works when the window holds a
 // whole circle: slow circles (≥ 4 s per turn, which is what mom asks for) stopped counting.

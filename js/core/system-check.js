@@ -1,7 +1,7 @@
 // Detects technical limitations before and during the experience.
 // Every check returns { id, label, status: 'ok' | 'warn' | 'fail', detail, fix }.
 // 'fail' on a camera check means: go to mouse mode. 'warn' means: tell the visitor, keep going.
-// Used by experiments/e9-limitations and by the app (js/main.js).
+// Used by experiments/5-limitations/e9-limitations and by the app (js/main.js).
 
 const result = (id, label, status, detail, fix = '') => ({ id, label, status, detail, fix });
 

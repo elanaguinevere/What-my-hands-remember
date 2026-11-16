@@ -15,31 +15,38 @@ Add `?debug` to the URL (or press **D**) for the state panel: live state of ever
 
 ## Deliverables (experiment & research phase, 17 Nov)
 
-| Deliverable | Where |
-|---|---|
-| ml5: 2+ prebuilt models **and** 1 self-trained model | HandPose: `e1`, `e2`, `e4`, `e8` · FaceMesh: `e6` · self-trained NN (open / fist / pinch): `e5` |
-| GSAP: ScrollTrigger + 2 more plugins | `e3-colour-scroll` (ScrollTrigger, DrawSVG) · `e7-gsap-cooking` (ScrollTrigger pin/scrub, SplitText, MorphSVG, DrawSVG, MotionPath, ScrollTo, `gsap.matchMedia`) |
-| Meaningful mapping: ML signals → animation | `e8-mapping` (5 mapping types, editable ranges/curves/smoothing) + used in `e4`, `e5`, `e6` |
-| Final application skeleton with state handling | `index.html`, `css/`, `js/` (below) |
-| Technical limitations | `e9-limitations` + `docs/TECHNICAL-LIMITATIONS.md` + `js/core/system-check.js` |
-| Log of every experiment | `experiments/LOG.md` |
+The project is organised by deliverable. Experiments 1–3 + limitations live in `experiments/`, one folder per deliverable; the app skeleton is the project itself (`index.html`, `css/`, `js/`).
 
-Every experiment is one standalone page in its own folder, works in **mouse mode** without a camera (for demos), and has a test plan + "log this round" button that writes a line you can paste into `LOG.md`.
+| # | Deliverable | Folder | What's in it |
+|---|---|---|---|
+| 1 | ml5: 2 prebuilt models **and** 1 self-trained model | `experiments/1-ml5/` | HandPose (`e1`, `e2`, `e4`), FaceMesh (`e6`), self-trained network open / fist / pinch (`e5`), camera check (`e0`) |
+| 2 | GSAP: ScrollTrigger + 2 more plugins | `experiments/2-gsap/` | `e3` ScrollTrigger + DrawSVG · `e7` ScrollTrigger, SplitText, MorphSVG, DrawSVG, MotionPath, ScrollTo |
+| 3 | Meaningful mapping: ML signals → animation | `experiments/3-mapping/` | `e8`: 5 kinds of mapping, editable live (also used in `e2`, `e4`, `e5`, `e6`) |
+| 4 | Final application skeleton + state handling | project root | `index.html`, `css/`, `js/` (structure below) |
+| 5 | Technical limitations: detect + mitigate | `experiments/5-limitations/` + `docs/` | `e9` live checks · `docs/TECHNICAL-LIMITATIONS.md` (34 items) · `js/core/system-check.js` |
+| – | Log of every experiment | `experiments/LOG.md` | question, approach, results, decisions |
 
-| Folder | Question |
-|---|---|
-| `e0-camera` | Does the camera work? |
-| `e1-handpose` | Under which conditions (backend, model, light) does HandPose run fast enough? |
-| `e2-chop` | Can a chop become exactly one slice, and can it tell "too fast"? |
-| `e3-colour-scroll` | How can scroll transitions feel fun? (ScrollTrigger + DrawSVG) |
-| `e4-circles` | Can circling become "turns" + "speed", fist (grind) vs open hand (stir)? |
-| `e5-pinch-classifier` | Can a network trained on the visitor's hands make one pinch = one spice? |
-| `e6-taste-facemesh` | Smile vs "too spicy" face after a neutral calibration? |
-| `e7-gsap-cooking` | All the cooking animations, scroll-driven |
-| `e8-mapping` | Which kinds of mapping make a hand signal feel like cooking? |
-| `e9-limitations` | What can go wrong, can the page notice it, what does it do then? |
+Every experiment is one standalone page in its own folder, works in **mouse mode** without a camera (for demos), and has a test plan + "log this round" button. Each deliverable folder has a short README with what to demo.
 
-`experiments/shared/` holds the common look (`exp.css`) and helpers (`exp.js`: camera start, error messages, palm-based measurements, logging).
+```
+experiments/
+  1-ml5/
+    e0-camera/              Does the camera work?
+    e1-handpose/            Under which conditions does HandPose run fast enough?
+    e2-chop/                Can a chop become exactly one slice, and can it tell "too fast"?
+    e4-circles/             Can circling become turns + speed, fist (grind) vs open hand (stir)?
+    e5-pinch-classifier/    Can a network trained on the visitor's hands make one pinch = one spice?
+    e6-taste-facemesh/      Smile vs "too spicy" face after a neutral calibration?
+  2-gsap/
+    e3-colour-scroll/       How can scroll transitions feel fun?
+    e7-gsap-cooking/        All the cooking animations, scroll-driven
+  3-mapping/
+    e8-mapping/             Which kinds of mapping make a hand signal feel like cooking?
+  5-limitations/            (4 = the app skeleton: the project root)
+    e9-limitations/         What can go wrong, can the page notice it, what does it do then?
+  shared/                   common look (exp.css) + helpers (exp.js)
+  LOG.md
+```
 
 ## Project structure
 

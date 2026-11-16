@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>E4 · Grind & stir (circular motion)</title>
-  <link rel="stylesheet" href="../shared/exp.css">
+  <link rel="stylesheet" href="../../shared/exp.css">
   <style>
     #path { width: 100%; height: 240px; background: #fff; border-radius: 6px; border: 1px solid rgba(43,38,34,.2); }
     .modes button.active { background: var(--ink); color: var(--paper); }
@@ -108,12 +108,12 @@
     </div>
   </div>
 
-  <script src="../../js/lib/gsap.min.js"></script>
-  <script src="../../js/lib/ml5.min.js"></script>
-  <script src="../shared/exp.js"></script>
+  <script src="../../../js/lib/gsap.min.js"></script>
+  <script src="../../../js/lib/ml5.min.js"></script>
+  <script src="../../shared/exp.js"></script>
   <script type="module">
     // The same tracker as the app (js/gestures/circle.js), so what is tested here is what runs there
-    import { CircleTracker } from '../../js/gestures/circle.js';
+    import { CircleTracker } from '../../../js/gestures/circle.js';
     const { $, clamp, lerp } = Exp;
     const settings = Exp.bindSliders(['Radius', 'Cv', 'Flat', 'Fist', 'Goal', 'Fast'], {});
     const log = Exp.makeLog($('log'));

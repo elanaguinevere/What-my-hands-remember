@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>E9 · Technical limitations: detect &amp; mitigate</title>
-  <link rel="stylesheet" href="../shared/exp.css">
+  <link rel="stylesheet" href="../../shared/exp.css">
   <style>
     #checks { width: 100%; }
     #checks td { text-align: left; vertical-align: top; }
@@ -45,11 +45,11 @@
     </div>
   </div>
 
-  <script src="../../js/lib/gsap.min.js"></script>
-  <script src="../../js/lib/ScrollTrigger.min.js"></script>
-  <script src="../shared/exp.js"></script>
+  <script src="../../../js/lib/gsap.min.js"></script>
+  <script src="../../../js/lib/ScrollTrigger.min.js"></script>
+  <script src="../../shared/exp.js"></script>
   <script type="module">
-    import { staticChecks, measureLight, checkHandFraming, fpsVerdict, backendCheck, watchCamera, loadScript, withTimeout, explainError } from '../../js/core/system-check.js';
+    import { staticChecks, measureLight, checkHandFraming, fpsVerdict, backendCheck, watchCamera, loadScript, withTimeout, explainError } from '../../../js/core/system-check.js';
     const { $ } = Exp;
     const log = Exp.makeLog($('log'));
     const fps = Exp.fpsMeter();
@@ -71,7 +71,7 @@
     async function start() {
       setLive({ id: 'load', label: 'Loading', status: 'warn', detail: 'ml5 script…' });
       const t0 = performance.now();
-      await loadScript('../../js/lib/ml5.min.js');
+      await loadScript('../../../js/lib/ml5.min.js');
       const t1 = performance.now();
       if (!window.isSecureContext) { const e = new Error('insecure'); e.name = 'InsecureContext'; throw e; }
       stream = await Exp.startCamera($('video'), $('overlay'));

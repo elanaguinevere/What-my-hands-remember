@@ -1,4 +1,4 @@
-// Chop detector (ported from experiments/e2-chop).
+// Chop detector (ported from experiments/1-ml5/e2-chop).
 // ready → (fast down) → down → (fast up, dropped far enough) → chop → ready
 // "Too fast" counts every fast downward stroke (> fast per second), separately from chops.
 import { palmSize } from './hand.js';

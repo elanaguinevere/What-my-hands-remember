@@ -1,4 +1,4 @@
-// Tasting face (from experiments/e6-taste-facemesh, v3 — 16 Nov).
+// Tasting face (from experiments/1-ml5/e6-taste-facemesh, v3 — 16 Nov).
 // 40 neutral frames → baseline (median). Every feature is then measured as a change from that baseline:
 //   smile ("right")   = mouth wider than +15%  AND corners up more than +1.5 (% of face height), held 1.2 s (v3.1)
 //   too spicy         = eyes scrunched > 22%   AND brows pulled down > 4%, held 0.6 s, not while smiling

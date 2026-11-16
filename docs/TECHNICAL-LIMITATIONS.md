@@ -1,7 +1,7 @@
 # Technical limitations — detect & mitigate
 
 What can go wrong on a visitor's computer, how the page notices it by itself, and what it does then.
-Detection code: `js/core/system-check.js` (shared by the app and `experiments/e9-limitations`).
+Detection code: `js/core/system-check.js` (shared by the app and `experiments/5-limitations/e9-limitations`).
 Rule of thumb: **every camera or model failure ends in a working mouse mode**, with one plain sentence about why.
 
 Status: ✅ built — checked in headless Chrome on 14 Nov for #1, 4, 6, 9, 11, 16 and the full mouse-mode run · 🟡 built, still to test with a real webcam / situation · 🔍 known limitation, only partly solvable
@@ -61,6 +61,6 @@ Nothing leaves the browser: no recording, no upload. The video goes only into th
 
 ## How to test (E9 test plan)
 
-Open `experiments/e9-limitations/` and log a snapshot for each of these:
+Open `experiments/5-limitations/e9-limitations/` and log a snapshot for each of these:
 
 1. `file://` · 2. http via the local IP instead of localhost · 3. block the camera · 4. camera busy in Photo Booth · 5. unplug an external camera (or "simulate") · 6. dark room · 7. window behind you · 8. hand very close / very far / at the edge · 9. tab in the background for 10 s · 10. Chrome with hardware acceleration off · 11. wifi off before pressing "Run" · 12. Firefox and Safari.

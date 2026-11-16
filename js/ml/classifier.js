@@ -1,4 +1,4 @@
-// Self-trained hand-shape classifier: open / fist / pinch (ported from experiments/e5-pinch-classifier).
+// Self-trained hand-shape classifier: open / fist / pinch (ported from experiments/1-ml5/e5-pinch-classifier).
 // Until it is trained (or in "simple rules" mode) it falls back to the distance heuristic,
 // so the spices step always works.
 import { machines, values, MIN_SAMPLES } from '../state.js';
